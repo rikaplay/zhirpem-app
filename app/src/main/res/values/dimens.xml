@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="androidx_media3_notification_control_size">28dp</dimen>
+    <dimen name="androidx_media3_controller_button_size">20dp</dimen>
+
+    <dimen name="androidx_media3_time_bar_height">2dp</dimen>
+
+    <dimen name="androidx_media3_button_padding">2dp</dimen>
+</resources>

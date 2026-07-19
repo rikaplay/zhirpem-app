@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "628761008562",
+    "project_id": "zhirpem-app",
+    "storage_bucket": "zhirpem-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:628761008562:android:7848461f428e2b3befacab",
+        "android_client_info": {
+          "package_name": "com.RIKAPLAY.zhirpem_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBymqdB10OT-T3Wq7H7tUb8YUci1u-qSjI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
