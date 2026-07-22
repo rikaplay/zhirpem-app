@@ -4,7 +4,6 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
 
 class AndroidPlatform(private val context: Context) : Platform {
     override val name: String = "Android"
@@ -32,14 +31,12 @@ class AndroidPlatform(private val context: Context) : Platform {
     }
 }
 
-// This needs to be set from MainActivity
 lateinit var androidPlatform: AndroidPlatform
 
 actual fun getPlatform(): Platform = androidPlatform
 
-val LocalGlassEnabled = staticCompositionLocalOf { true }
-
 @Composable
-actual fun LocalGlassEnabledProvider(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalGlassEnabled provides true, content = content)
+actual fun PlatformSpecificProvider(content: @Composable () -> Unit) {
+    // Android specific providers if any
+    content()
 }

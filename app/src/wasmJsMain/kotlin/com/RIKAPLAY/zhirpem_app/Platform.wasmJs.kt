@@ -1,8 +1,6 @@
 package com.RIKAPLAY.zhirpem_app
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.browser.window
 import kotlinx.browser.localStorage
 
@@ -32,9 +30,7 @@ class WasmPlatform : Platform {
 
 actual fun getPlatform(): Platform = WasmPlatform()
 
-val LocalGlassEnabled = staticCompositionLocalOf { false }
-
 @Composable
-actual fun LocalGlassEnabledProvider(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalGlassEnabled provides false, content = content)
+actual fun PlatformSpecificProvider(content: @Composable () -> Unit) {
+    content()
 }

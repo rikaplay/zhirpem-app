@@ -1,6 +1,7 @@
 package com.RIKAPLAY.zhirpem_app
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 
 interface Platform {
     val name: String
@@ -13,5 +14,8 @@ interface Platform {
 
 expect fun getPlatform(): Platform
 
+// CompositionLocal for glass effect, common to all platforms
+val LocalGlassEnabled = staticCompositionLocalOf { true }
+
 @Composable
-expect fun LocalGlassEnabledProvider(content: @Composable () -> Unit)
+expect fun PlatformSpecificProvider(content: @Composable () -> Unit)

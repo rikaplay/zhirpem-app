@@ -1,9 +1,9 @@
 package com.RIKAPLAY.zhirpem_app.ui.theme
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import com.RIKAPLAY.zhirpem_app.AppThemeMode
@@ -34,9 +34,13 @@ fun Zhirpem_appTheme(
     content: @Composable () -> Unit
 ) {
     val isSystemDark = isSystemInDarkTheme()
+    
+    // В вебе мы используем стандартные схемы, в Android - можем использовать динамические
     val colorScheme = when (themeMode) {
         AppThemeMode.LIGHT -> LightColorScheme
-        AppThemeMode.DARK, AppThemeMode.AMOLED -> DarkColorScheme
+        AppThemeMode.DARK, AppThemeMode.AMOLED -> if (themeMode == AppThemeMode.AMOLED) 
+            darkColorScheme(primary = Color(0xFF8DE3B5), background = Color.Black, surface = Color(0xFF0A0A0A)) 
+            else DarkColorScheme
         else -> if (isSystemDark) DarkColorScheme else LightColorScheme
     }
 
