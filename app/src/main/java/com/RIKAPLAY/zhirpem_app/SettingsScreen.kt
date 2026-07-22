@@ -17,7 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.*
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,7 +40,15 @@ fun SettingsScreen(
     val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
     val settingsManager = remember { SettingsManager(context) }
     val themeManager = remember { ThemeManager(context) }
+    val updater = remember { GitHubUpdater(context) }
+    val coroutineScope = rememberCoroutineScope()
     var myUsername by remember { mutableStateOf(sharedPrefs.getString("username", "") ?: "") }
+
+    // Состояния для обновления
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var updateUrl by remember { mutableStateOf<String?>(null) }
+    var updateMessage by remember { mutableStateOf("") }
 
     // Состояния данных пользователя
     var name by remember { mutableStateOf("") }
@@ -49,6 +59,8 @@ fun SettingsScreen(
         mutableStateOf(sharedPrefs.getBoolean("vibration_enabled", true))
     }
     var isLowPerf by remember { mutableStateOf(settingsManager.isLowPerformanceMode) }
+    var isSplashEnabled by remember { mutableStateOf(settingsManager.isSplashScreenEnabled) }
+    var isSplashSoundEnabled by remember { mutableStateOf(settingsManager.isSplashSoundEnabled) }
     var isGlassEnabled by remember { mutableStateOf(settingsManager.isGlassEnabled) }
     var glassAlpha by remember { mutableStateOf(settingsManager.glassAlpha) }
     var fontSizeMultiplier by remember { mutableStateOf(settingsManager.fontSizeMultiplier) }
@@ -319,6 +331,74 @@ fun SettingsScreen(
 
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Splash Screen", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Показывать логотип при запуске", 
+                                    fontSize = 12.sp, 
+                                    color = Color.Gray
+                                )
+                            }
+                            Switch(
+                                checked = isSplashEnabled,
+                                onCheckedChange = { newValue ->
+                                    isSplashEnabled = newValue
+                                    settingsManager.isSplashScreenEnabled = newValue
+                                }
+                            )
+                        }
+
+                        val animationsEnabledGlobal = LocalAnimationsEnabled.current
+                        AnimatedVisibility(
+                            visible = isSplashEnabled,
+                            enter = if (animationsEnabledGlobal) expandVertically() + fadeIn() else EnterTransition.None,
+                            exit = if (animationsEnabledGlobal) shrinkVertically() + fadeOut() else ExitTransition.None
+                        ) {
+                            Column {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                                )
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "Звук сплеш-скрина",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            "Воспроизводить звук при запуске",
+                                            fontSize = 12.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                    Switch(
+                                        checked = isSplashSoundEnabled,
+                                        onCheckedChange = { newValue ->
+                                            isSplashSoundEnabled = newValue
+                                            settingsManager.isSplashSoundEnabled = newValue
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
                         // --- РАЗМЕР ШРИФТА ---
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -461,6 +541,37 @@ fun SettingsScreen(
                                 }
                             }
                         }
+
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                        ListItem(
+                            headlineContent = { Text("Проверить обновления", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text("Поиск новой версии на GitHub", fontSize = 13.sp, color = Color.Gray) },
+                            leadingContent = {
+                                if (isCheckingUpdate) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                }
+                            },
+                            trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray) },
+                            modifier = Modifier.clickable {
+                                if (!isCheckingUpdate) {
+                                    coroutineScope.launch {
+                                        isCheckingUpdate = true
+                                        val url = updater.checkForUpdates()
+                                        isCheckingUpdate = false
+                                        if (url != null) {
+                                            updateUrl = url
+                                            showUpdateDialog = true
+                                        } else {
+                                            updateMessage = "У вас установлена последняя версия"
+                                            android.widget.Toast.makeText(context, updateMessage, android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
 
@@ -543,28 +654,54 @@ fun SettingsScreen(
                     Text("Выберите стиль значка для рабочего стола:", fontSize = 14.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = { 
-                                changeAppIcon(context, "MainActivityAlias1")
-                                sharedPrefs.edit().putString("app_icon", "MainActivityAlias1").apply()
-                                showIconDialog = false
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Жирпем 1")
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { 
+                                    changeAppIcon(context, "MainActivity")
+                                    sharedPrefs.edit().putString("app_icon", "MainActivity").apply()
+                                    showIconDialog = false
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Оригинал")
+                            }
+                            OutlinedButton(
+                                onClick = { 
+                                    changeAppIcon(context, "MainActivityAlias1")
+                                    sharedPrefs.edit().putString("app_icon", "MainActivityAlias1").apply()
+                                    showIconDialog = false
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Жирпем 1")
+                            }
                         }
-                        OutlinedButton(
-                            onClick = { 
-                                changeAppIcon(context, "MainActivityAlias2")
-                                sharedPrefs.edit().putString("app_icon", "MainActivityAlias2").apply()
-                                showIconDialog = false
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Жирпем 2")
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { 
+                                    changeAppIcon(context, "MainActivityAlias2")
+                                    sharedPrefs.edit().putString("app_icon", "MainActivityAlias2").apply()
+                                    showIconDialog = false
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Жирпем 2")
+                            }
+                            OutlinedButton(
+                                onClick = { 
+                                    changeAppIcon(context, "MainActivityAlias3")
+                                    sharedPrefs.edit().putString("app_icon", "MainActivityAlias3").apply()
+                                    showIconDialog = false
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Жирпем 3")
+                            }
                         }
                     }
                 }
@@ -670,6 +807,28 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showColorPickerDialog = false }) { Text("Отмена") }
+            }
+        )
+    }
+
+    // Диалог обновления
+    if (showUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            title = { Text("Доступно обновление") },
+            text = { Text("Найдена новая версия приложения. Хотите обновить?") },
+            confirmButton = {
+                Button(onClick = {
+                    showUpdateDialog = false
+                    updateUrl?.let { updater.downloadAndInstall(it) }
+                }) {
+                    Text("Обновить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdateDialog = false }) {
+                    Text("Отмена")
+                }
             }
         )
     }

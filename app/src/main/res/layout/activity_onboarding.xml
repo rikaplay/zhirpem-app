@@ -22,13 +22,14 @@
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/tabLayout"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
             android:layout_gravity="center"
             android:background="@android:color/transparent"
             app:tabBackground="@drawable/dot_selector"
             app:tabGravity="center"
             app:tabIndicatorHeight="0dp"
-            app:tabMaxWidth="12dp"
+            app:tabMaxWidth="20dp"
+            app:tabMinWidth="20dp"
             app:tabRippleColor="@null" />
 
         <Button
@@ -37,12 +38,13 @@
             android:layout_height="60dp"
             android:layout_marginTop="24dp"
             android:text="Далее"
-            android:backgroundTint="#2196F3"
+            android:background="@drawable/bg_glass_button"
+            app:backgroundTint="@null"
             android:textColor="#FFFFFF"
             android:textAllCaps="false"
             android:textSize="18sp"
             android:textStyle="bold"
-            app:cornerRadius="16dp" />
+            app:cornerRadius="20dp" />
     </LinearLayout>
 
 </RelativeLayout>

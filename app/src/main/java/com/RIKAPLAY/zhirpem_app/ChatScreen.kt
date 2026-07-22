@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
@@ -80,6 +82,12 @@ import java.io.File
 import android.os.Build
 import kotlinx.coroutines.delay
 
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
+import java.util.Date
+import java.util.Locale
+import java.text.SimpleDateFormat
+
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun ChatScreen(chatId: String, onBack: () -> Unit, onNavigateToPost: (String) -> Unit, onOpenCamera: () -> Unit) {
@@ -96,9 +104,37 @@ fun ChatScreen(chatId: String, onBack: () -> Unit, onNavigateToPost: (String) ->
     
     var isMenuExpanded by remember { mutableStateOf(false) }
     var isSendingMedia by remember { mutableStateOf(false) }
+    var isPeerTyping by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+
+    val rtdb = FirebaseDatabase.getInstance()
+    val peerId = chatId.split("_").firstOrNull { it != myUsername } ?: ""
+
+    // Слушатель статуса "Печатает..."
+    LaunchedEffect(chatId) {
+        if (peerId.isNotEmpty()) {
+            val typingRef = rtdb.getReference("chats/$chatId/typing/$peerId")
+            typingRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                    isPeerTyping = snapshot.getValue(Boolean::class.java) ?: false
+                }
+                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+            })
+        }
+    }
+
+    // Пометка сообщений как прочитанных
+    LaunchedEffect(messages) {
+        val unreadMessages = messages.filter { it.senderId != myUsername && !it.isRead }
+        if (unreadMessages.isNotEmpty()) {
+            unreadMessages.forEach { msg ->
+                db.collection("chats").document(chatId).collection("messages").document(msg.id)
+                    .update("isRead", true)
+            }
+        }
+    }
 
     // ПРАВА ДОСТУПА
     val audioPermissionState = rememberPermissionState(android.Manifest.permission.RECORD_AUDIO)
@@ -233,7 +269,18 @@ fun ChatScreen(chatId: String, onBack: () -> Unit, onNavigateToPost: (String) ->
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(peerName, fontWeight = FontWeight.Bold)
+                        Column {
+                            Text(peerName, fontWeight = FontWeight.Bold)
+                            if (isPeerTyping) {
+                                Text(
+                                    "печатает...",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                PresenceText(username = peerId)
+                            }
+                        }
                     }
                 },
                 navigationIcon = {
@@ -297,6 +344,9 @@ fun ChatScreen(chatId: String, onBack: () -> Unit, onNavigateToPost: (String) ->
                                     senderAvatar = sharedPrefs.getString("avatarUrl", "") ?: ""
                                 )
                                 replyingToMessage = null
+                            },
+                            onTyping = { isTyping ->
+                                rtdb.getReference("chats/$chatId/typing/$myUsername").setValue(isTyping)
                             },
                             onStartAudioRecord = { 
                                 if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -715,6 +765,36 @@ fun MessageBubble(
                         )
                     }
 
+                    if (isMyMessage) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                            Text(
+                                text = timeFormat.format(Date(message.timestamp)),
+                                fontSize = 10.sp,
+                                color = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                            Icon(
+                                imageVector = if (message.isRead) Icons.Filled.DoneAll else Icons.Filled.Done,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    } else {
+                        val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        Text(
+                            text = timeFormat.format(Date(message.timestamp)),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.align(Alignment.End).padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+
                     DropdownMenu(
                         expanded = isMenuExpanded,
                         onDismissRequest = { isMenuExpanded = false }
@@ -803,7 +883,8 @@ fun sendMessage(
         "mediaType" to mediaType.name,
         "forwardedPostId" to null,
         "replyToId" to replyToId,
-        "replyToText" to replyToText
+        "replyToText" to replyToText,
+        "isRead" to false
     )
 
     db.runTransaction { transaction ->

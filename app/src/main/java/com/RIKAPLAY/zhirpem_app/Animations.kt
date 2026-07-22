@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.CircleShape
 
+import androidx.compose.foundation.isSystemInDarkTheme
+
 // Оптимизированная мягкая пружина: высокая жесткость, среднее затухание (без эффекта желе)
 val premiumSpring = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -58,12 +60,16 @@ fun Modifier.bounceClick(onClick: () -> Unit = {}): Modifier = this.composed {
         )
 }
 
+@Composable
 fun Modifier.liquidGlassEffect(isGlassEnabled: Boolean): Modifier = if (isGlassEnabled) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.1f)
+    
     this
         .blur(16.dp)
         .border(
             width = 1.dp,
-            color = Color.White.copy(alpha = 0.15f),
+            color = borderColor,
             shape = CircleShape
         )
 } else {

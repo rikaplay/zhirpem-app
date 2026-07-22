@@ -32,8 +32,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +55,8 @@ import androidx.compose.ui.window.DialogProperties
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.messaging.FirebaseMessaging
+import com.onesignal.OneSignal
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.delay
@@ -59,6 +64,8 @@ import kotlinx.coroutines.launch
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -78,6 +85,8 @@ import android.os.VibratorManager
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
 import com.RIKAPLAY.zhirpem_app.ui.theme.Zhirpem_appTheme
 
 // ==========================================
@@ -110,29 +119,31 @@ class MainActivity : ComponentActivity() {
             ) {
                 Zhirpem_appTheme(themeMode = savedTheme) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        AppNavigation(
-                            currentTheme = savedTheme,
-                            onThemeChange = { newTheme ->
-                                savedTheme = newTheme
-                                sharedPrefs.edit().putString("app_theme", newTheme.name).apply()
-                            },
-                            onPerformanceModeChanged = { isLowPerf ->
-                                settingsManager.isLowPerformanceMode = isLowPerf
-                                animationsEnabled.value = !isLowPerf
-                            },
-                            onFontSizeChanged = { newSize ->
-                                settingsManager.fontSizeMultiplier = newSize
-                                fontSizeMultiplier.value = newSize
-                            },
-                            onGlassModeChanged = { enabled ->
-                                settingsManager.isGlassEnabled = enabled
-                                isGlassEnabled.value = enabled
-                            },
-                            onGlassAlphaChanged = { alpha ->
-                                settingsManager.glassAlpha = alpha
-                                glassAlpha.value = alpha
-                            }
-                        )
+                        NetworkStabilityWrapper {
+                            AppNavigation(
+                                currentTheme = savedTheme,
+                                onThemeChange = { newTheme ->
+                                    savedTheme = newTheme
+                                    sharedPrefs.edit().putString("app_theme", newTheme.name).apply()
+                                },
+                                onPerformanceModeChanged = { isLowPerf ->
+                                    settingsManager.isLowPerformanceMode = isLowPerf
+                                    animationsEnabled.value = !isLowPerf
+                                },
+                                onFontSizeChanged = { newSize ->
+                                    settingsManager.fontSizeMultiplier = newSize
+                                    fontSizeMultiplier.value = newSize
+                                },
+                                onGlassModeChanged = { enabled ->
+                                    settingsManager.isGlassEnabled = enabled
+                                    isGlassEnabled.value = enabled
+                                },
+                                onGlassAlphaChanged = { alpha ->
+                                    settingsManager.glassAlpha = alpha
+                                    glassAlpha.value = alpha
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -149,12 +160,36 @@ class MainActivity : ComponentActivity() {
         updateOnlineStatus(false)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        SoundManager.release()
+    }
+
     private fun updateOnlineStatus(isOnline: Boolean) {
         val sharedPrefs = getSharedPreferences("user_session", Context.MODE_PRIVATE)
         val username = sharedPrefs.getString("username", null)
         if (username != null) {
             val db = FirebaseFirestore.getInstance()
             db.collection("users").document(username).update("isOnline", isOnline)
+
+            // Realtime Database Presence
+            val rtdb = FirebaseDatabase.getInstance()
+            val statusRef = rtdb.getReference("status/$username")
+            if (isOnline) {
+                statusRef.setValue(mapOf(
+                    "state" to "online",
+                    "last_changed" to ServerValue.TIMESTAMP
+                ))
+                statusRef.onDisconnect().setValue(mapOf(
+                    "state" to "offline",
+                    "last_changed" to ServerValue.TIMESTAMP
+                ))
+            } else {
+                statusRef.setValue(mapOf(
+                    "state" to "offline",
+                    "last_changed" to ServerValue.TIMESTAMP
+                ))
+            }
         }
     }
 }
@@ -183,12 +218,15 @@ fun AppNavigation(
     var isStatisticsOpen by remember { mutableStateOf(false) }
     var isOptimizationOpen by remember { mutableStateOf(false) }
     var isSecuritySettingsOpen by remember { mutableStateOf(false) }
+    var isNewsOpen by remember { mutableStateOf(false) }
     var showBackupWarning by remember { mutableStateOf(false) }
     var activeCommunityId by remember { mutableStateOf<String?>(null) }
     var globalChatId by remember { mutableStateOf<String?>(null) }
     var globalSearchQuery by remember { mutableStateOf<String?>(null) }
     var isCheckingSession by remember { mutableStateOf(true) }
+    var showSplash by remember { mutableStateOf(true) }
 
+    val settingsManager = remember { SettingsManager(context) }
     val myUsername = sharedPrefs.getString("username", "anonymous") ?: "anonymous"
 
     // Запрос разрешения на уведомления для Android 13+
@@ -208,6 +246,10 @@ fun AppNavigation(
 
     LaunchedEffect(isLoggedIn, myUsername) {
         if (isLoggedIn && myUsername != "anonymous") {
+            // Идентифицируем пользователя в OneSignal при входе
+            OneSignal.User.addAlias("external_id", myUsername)
+            OneSignal.Notifications.requestPermission(true)
+
             FirebaseFirestore.getInstance().collection("users").document(myUsername)
                 .get()
                 .addOnSuccessListener { snapshot ->
@@ -225,7 +267,13 @@ fun AppNavigation(
         isCheckingSession = false
     }
 
-    if (isCheckingSession) {
+    if (showSplash) {
+        val settingsManager = remember { SettingsManager(context) }
+        SplashScreen(
+            isEnabled = settingsManager.isSplashScreenEnabled,
+            onNavigateToMain = { showSplash = false }
+        )
+    } else if (isCheckingSession) {
         // Экран-заглушка при старте
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -247,17 +295,18 @@ fun AppNavigation(
                 AuthScreen(onAuthSuccess = { isLoggedIn = true })
             } else {
                 // Определяем текущее состояние экрана для анимации переходов
-                val navigationState = when {
-                    isSettingsOpen -> "settings" to null
-                    isOptimizationOpen -> "optimization" to null
-                    isBookmarksOpen -> "bookmarks" to null
-                    activeCommunityId != null -> "community_details" to activeCommunityId
-                    isCommunitiesOpen -> "communities" to null
-                    isStatisticsOpen -> "statistics" to null
-                    isSecuritySettingsOpen -> "security_settings" to null
-                    currentProfileUser != null -> "profile" to currentProfileUser
-                    else -> "main" to null
-                }
+                    val navigationState = when {
+                        isSettingsOpen -> "settings" to null
+                        isOptimizationOpen -> "optimization" to null
+                        isBookmarksOpen -> "bookmarks" to null
+                        isNewsOpen -> "news" to null
+                        activeCommunityId != null -> "community_details" to activeCommunityId
+                        isCommunitiesOpen -> "communities" to null
+                        isStatisticsOpen -> "statistics" to null
+                        isSecuritySettingsOpen -> "security_settings" to null
+                        currentProfileUser != null -> "profile" to currentProfileUser
+                        else -> "main" to null
+                    }
 
                 val animationsEnabled = LocalAnimationsEnabled.current
 
@@ -339,6 +388,10 @@ fun AppNavigation(
                             BackHandler { isOptimizationOpen = false }
                             OptimizationScreen(onBack = { isOptimizationOpen = false })
                         }
+                        "news" -> {
+                            BackHandler { isNewsOpen = false }
+                            UpdateNewsScreen(onBack = { isNewsOpen = false })
+                        }
                         "profile" -> {
                             BackHandler { currentProfileUser = null }
                             UserProfileScreen(
@@ -361,6 +414,7 @@ fun AppNavigation(
                                 onNavigateToBookmarks = { isBookmarksOpen = true },
                                 onNavigateToCommunities = { isCommunitiesOpen = true },
                                 onNavigateToStatistics = { isStatisticsOpen = true },
+                                onShowWhatsNew = { isNewsOpen = true },
                                 externalChatId = globalChatId,
                                 onExternalChatOpened = { globalChatId = null },
                                 initialSearchQuery = globalSearchQuery,
@@ -433,6 +487,13 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
                 .addOnSuccessListener { doc ->
                     isLoading = false
                     if (doc.exists() && doc.getString("password") == password) {
+                        val loggedUsername = cleanUsername
+                        OneSignal.User.addAlias("external_id", loggedUsername)
+                        // Запрос разрешения в фоне
+                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                            OneSignal.Notifications.requestPermission(true)
+                        }
+
                         sharedPrefs.edit()
                             .putBoolean("is_logged_in", true)
                             .putString("username", cleanUsername)
@@ -690,6 +751,7 @@ fun MainScreen(
     onNavigateToBookmarks: () -> Unit,
     onNavigateToCommunities: () -> Unit,
     onNavigateToStatistics: () -> Unit,
+    onShowWhatsNew: () -> Unit,
     externalChatId: String? = null,
     onExternalChatOpened: () -> Unit = {},
     initialSearchQuery: String? = null,
@@ -707,6 +769,7 @@ fun MainScreen(
     var currentAvatarUrl by remember { mutableStateOf<String?>(null) }
     
     LaunchedEffect(myUsername) {
+        FirebaseMessaging.getInstance().subscribeToTopic("new_posts")
         if (myUsername != "anonymous") {
             FirebaseFirestore.getInstance().collection("users").document(myUsername)
                 .addSnapshotListener { snapshot, _ ->
@@ -767,80 +830,144 @@ fun MainScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
+            val isGlassEnabled = LocalGlassEnabled.current
+            val glassAlpha = LocalGlassAlpha.current
+            val isDark = isSystemInDarkTheme()
+
             ModalDrawerSheet(
-                drawerContainerColor = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.width(320.dp).fillMaxHeight(),
-                drawerShape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp)
+                drawerContainerColor = Color.Transparent,
+                modifier = Modifier
+                    .width(320.dp)
+                    .fillMaxHeight()
+                    .padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 16.dp),
+                drawerShape = RoundedCornerShape(32.dp),
+                drawerTonalElevation = 0.dp,
+                windowInsets = WindowInsets(0)
             ) {
-                val scrollState = rememberScrollState()
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp)
-                        .verticalScroll(scrollState)
-                ) {
-                    // Шапка меню (Профиль)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Glassy Background Layer
                     Box(
                         modifier = Modifier
-                            .size(60.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                            .clickable {
-                                scope.launch { drawerState.close() }
-                                onNavigateToProfile(myUsername)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!currentAvatarUrl.isNullOrEmpty()) {
-                            AsyncImage(
-                                model = currentAvatarUrl,
-                                contentDescription = "Аватар",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(32.dp))
+                            .then(
+                                if (isGlassEnabled) {
+                                    Modifier
+                                        .let {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                it.graphicsLayer {
+                                                    renderEffect = android.graphics.RenderEffect
+                                                        .createBlurEffect(30f, 30f, android.graphics.Shader.TileMode.DECAL)
+                                                        .asComposeRenderEffect()
+                                                }
+                                            } else {
+                                                it.blur(20.dp)
+                                            }
+                                        }
+                                        .background(
+                                            if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = glassAlpha)
+                                            else Color.White.copy(alpha = 0.7f)
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.1f),
+                                            shape = RoundedCornerShape(32.dp)
+                                        )
+                                } else {
+                                    Modifier.background(MaterialTheme.colorScheme.surface)
+                                }
                             )
-                        } else {
-                            Text(currentName.take(1).uppercase(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(currentName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
-                    Text("@$myUsername", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 15.sp)
-                    Spacer(modifier = Modifier.height(24.dp))
+                    )
 
-                    // Кнопки меню
-                    val menuItems = listOf("👤  Мой Профиль", "⚙️  Настройки", "🔖  Закладки", "👥  Сообщества", "📈  Статистика")
-                    menuItems.forEach { item ->
-                        Text(
-                            text = item,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp)
+                            .verticalScroll(scrollState)
+                    ) {
+                        // Шапка меню (Профиль)
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
                                 .clickable {
                                     scope.launch { drawerState.close() }
-                                    if (item.contains("Профиль")) onNavigateToProfile(myUsername)
-                                    if (item.contains("Настройки")) onNavigateToSettings()
-                                    if (item.contains("Закладки")) onNavigateToBookmarks()
-                                    if (item.contains("Сообщества")) onNavigateToCommunities()
-                                    if (item.contains("Статистика")) onNavigateToStatistics()
-                                }
-                                .padding(vertical = 14.dp, horizontal = 12.dp)
-                        )
-                    }
+                                    onNavigateToProfile(myUsername)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!currentAvatarUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = currentAvatarUrl,
+                                    contentDescription = "Аватар",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text(currentName.take(1).uppercase(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(currentName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+                        Text("@$myUsername", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 15.sp)
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    Spacer(modifier = Modifier.weight(1f))
-                    // Кнопка выхода
-                    Button(
-                        onClick = onLogout,
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.error
+                        // Кнопки меню
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        val menuItems = listOf(
+                            Triple("👤", "Мой Профиль", Icons.Default.Person),
+                            Triple("⚙️", "Настройки", Icons.Default.Add), // Placeholder, I'll use logic
+                            Triple("🔖", "Закладки", Icons.Default.Add),
+                            Triple("👥", "Сообщества", Icons.Default.Add),
+                            Triple("📈", "Статистика", Icons.Default.Add)
                         )
-                    ) {
-                        Text("Выйти из аккаунта", fontWeight = FontWeight.Bold)
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                "👤  Мой Профиль" to { onNavigateToProfile(myUsername) },
+                                "⚙️  Настройки" to { onNavigateToSettings() },
+                                "🔖  Закладки" to { onNavigateToBookmarks() },
+                                "👥  Сообщества" to { onNavigateToCommunities() },
+                                "📈  Статистика" to { onNavigateToStatistics() }
+                            ).forEach { (label, onClick) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .clickable {
+                                            scope.launch { drawerState.close() }
+                                            onClick()
+                                        }
+                                        .padding(vertical = 14.dp, horizontal = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+                        // Кнопка выхода
+                        Button(
+                            onClick = onLogout,
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Выйти из аккаунта", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -895,7 +1022,7 @@ fun MainScreen(
                         "notifications" -> NotificationsScreen()
                         "chats_list" -> ChatsListScreen(onChatClick = { activeChatId = it })
                         else -> {
-                            FeedScreen(
+                            MainFeedScreen(
                                 onUserClick = onNavigateToProfile,
                                 onHashtagClick = { hashtag ->
                                     hashtagSearchQuery = hashtag
@@ -903,6 +1030,7 @@ fun MainScreen(
                                 },
                                 onMenuClick = { scope.launch { drawerState.open() } },
                                 onAdminAccess = { isAdminOpen = true },
+                                onShowWhatsNew = onShowWhatsNew,
                                 currentAvatarUrl = currentAvatarUrl,
                                 currentName = currentName,
                                 showBackupWarning = showBackupWarning,
@@ -915,7 +1043,7 @@ fun MainScreen(
             }
 
             // Капсула навигации на верхнем слое
-            if (!isCameraOpen) {
+            if (!isCameraOpen && activeChatId == null) {
                 val navItems = listOf("🏠" to "Главная", "🔍" to "Поиск", "🔔" to "Уведомления", "✉️" to "Сообщения")
                 val selectedLabel = when {
                     isChatsListOpen -> "Сообщения"
@@ -1143,6 +1271,30 @@ fun ComposePostDialog(name: String, username: String, isMediaTabActive: Boolean,
                                     // Обычная логика отправки без фото
                                     db.collection("zhirpem_posts").add(newPost)
                                         .addOnSuccessListener { 
+                                            val postId = it.id
+                                            
+                                            // 1. Отправляем пуш через OneSignal REST API прямо из приложения
+                                            sendOneSignalNotification(
+                                                appId = "e52144a6-d4ea-46a4-870f-4089ec7a6af9",
+                                                restKey = "os_v2_app_4uqujjwu5jdkjbypice6y6tk7hgycpqrjz7el4eil7itrf3xlinih6ikgpfq6o5l43izejzh4wdmjtrszqsdjvzj455p7mvulqousny",
+                                                authorName = name,
+                                                text = postText.trim(),
+                                                postId = postId
+                                            )
+
+                                            // 2. Устанавливаем алиас для идентификации пользователя
+                                            OneSignal.User.addAlias("external_id", username)
+
+                                            // 3. Устанавливаем тег, чтобы сработал Journey в OneSignal
+                                            OneSignal.User.addTag("has_posted", "true")
+                                            android.util.Log.d("OneSignalDebug", "Тег has_posted успешно установлен для $username")
+
+                                            // 4. Сбрасываем тег через 2 секунды
+                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                OneSignal.User.removeTag("has_posted")
+                                                android.util.Log.d("OneSignalDebug", "Тег has_posted удален")
+                                            }, 2000)
+
                                             if (sharedPrefs.getBoolean("vibration_enabled", true)) {
                                                 triggerPublishVibration(context)
                                             }
@@ -1165,6 +1317,30 @@ fun ComposePostDialog(name: String, username: String, isMediaTabActive: Boolean,
                                             }
                                             db.collection("zhirpem_posts").add(newPost)
                                                 .addOnSuccessListener { 
+                                                    val postId = it.id
+
+                                                    // 1. Отправляем пуш через OneSignal REST API прямо из приложения
+                                                    sendOneSignalNotification(
+                                                        appId = "e52144a6-d4ea-46a4-870f-4089ec7a6af9",
+                                                        restKey = "os_v2_app_4uqujjwu5jdkjbypice6y6tk7hgycpqrjz7el4eil7itrf3xlinih6ikgpfq6o5l43izejzh4wdmjtrszqsdjvzj455p7mvulqousny",
+                                                        authorName = name,
+                                                        text = postText.trim(),
+                                                        postId = postId
+                                                    )
+
+                                                    // 2. Устанавливаем алиас для идентификации пользователя
+                                                    OneSignal.User.addAlias("external_id", username)
+
+                                                    // 3. Устанавливаем тег, чтобы сработал Journey в OneSignal
+                                                    OneSignal.User.addTag("has_posted", "true")
+                                                    android.util.Log.d("OneSignalDebug", "Тег has_posted успешно установлен для $username")
+
+                                                    // 4. Сбрасываем тег через 2 секунды
+                                                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                        OneSignal.User.removeTag("has_posted")
+                                                        android.util.Log.d("OneSignalDebug", "Тег has_posted удален")
+                                                    }, 2000)
+
                                                     if (sharedPrefs.getBoolean("vibration_enabled", true)) {
                                                         triggerPublishVibration(context)
                                                     }
@@ -1620,4 +1796,61 @@ private fun performSendNotification(
         "timestamp" to FieldValue.serverTimestamp()
     )
     db.collection("notifications").add(notification)
+}
+
+fun sendOneSignalNotification(
+    appId: String,
+    restKey: String,
+    authorName: String,
+    text: String,
+    postId: String
+) {
+    val client = OkHttpClient()
+    
+    val json = JSONObject()
+    json.put("app_id", appId)
+    
+    val segments = JSONArray()
+    segments.put("Subscribed Users")
+    json.put("included_segments", segments)
+    
+    val headings = JSONObject()
+    headings.put("en", "Новый пост от $authorName")
+    headings.put("ru", "Новый пост от $authorName")
+    json.put("headings", headings)
+    
+    val contents = JSONObject()
+    contents.put("en", text)
+    contents.put("ru", text)
+    json.put("contents", contents)
+    
+    val data = JSONObject()
+    data.put("postId", postId)
+    data.put("type", "NEW_POST")
+    json.put("data", data)
+    
+    json.put("android_channel_id", "zhirpem_notifications")
+
+    val mediaType = "application/json; charset=utf-8".toMediaType()
+    val body = json.toString().toRequestBody(mediaType)
+    
+    val request = Request.Builder()
+        .url("https://onesignal.com/api/v1/notifications")
+        .post(body)
+        .addHeader("Authorization", "Basic $restKey")
+        .build()
+
+    client.newCall(request).enqueue(object : Callback {
+        override fun onFailure(call: Call, e: java.io.IOException) {
+            android.util.Log.e("OneSignalREST", "Ошибка отправки пуша: ${e.message}")
+        }
+        override fun onResponse(call: Call, response: Response) {
+            val responseData = response.body?.string()
+            if (response.isSuccessful) {
+                android.util.Log.d("OneSignalREST", "Пуш успешно отправлен: $responseData")
+            } else {
+                android.util.Log.e("OneSignalREST", "Ошибка API OneSignal ($response): $responseData")
+            }
+        }
+    })
 }

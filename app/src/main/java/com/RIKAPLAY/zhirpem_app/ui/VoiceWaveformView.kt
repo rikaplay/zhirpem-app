@@ -72,6 +72,8 @@ class VoiceWaveformView @JvmOverloads constructor(
         invalidate()
     }
 
+    private val barRect = RectF()
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (bars.isEmpty()) return
@@ -90,8 +92,8 @@ class VoiceWaveformView @JvmOverloads constructor(
             bars
         }
 
-        val actualBarWidth = if (!isRecording && bars.size > 0) {
-             (width - (bars.size - 1) * barGap) / bars.size
+        val actualBarWidth = if (!isRecording && barsToShow.isNotEmpty()) {
+             (width - (barsToShow.size - 1) * barGap) / barsToShow.size
         } else {
             barWidth
         }
@@ -104,18 +106,28 @@ class VoiceWaveformView @JvmOverloads constructor(
             val top = centerY - bHeight / 2
             val bottom = centerY + bHeight / 2
             
-            val rect = RectF(x, top, x + actualBarWidth, bottom)
+            barRect.set(x, top, x + actualBarWidth, bottom)
             
             val isPlayed = !isRecording && (index.toFloat() / barsToShow.size) <= progress
-            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, if (isPlayed) playedBarPaint else barPaint)
+            canvas.drawRoundRect(barRect, cornerRadius, cornerRadius, if (isPlayed) playedBarPaint else barPaint)
         }
+    }
+
+    override fun performClick(): Boolean {
+        return super.performClick()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (isRecording) return false
         
         when (event.action) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+            MotionEvent.ACTION_DOWN -> {
+                performClick()
+                val newProgress = event.x / width
+                onSeekListener?.invoke(newProgress.coerceIn(0f, 1f))
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
                 val newProgress = event.x / width
                 onSeekListener?.invoke(newProgress.coerceIn(0f, 1f))
                 return true

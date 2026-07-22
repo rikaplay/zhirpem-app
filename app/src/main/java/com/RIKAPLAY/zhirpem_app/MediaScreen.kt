@@ -90,6 +90,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.ui.unit.IntOffset
 import kotlin.OptIn
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -195,7 +196,8 @@ data class Message(
     val timestamp: Long = 0L,
     val forwardedPostId: String? = null,
     val replyToId: String? = null,
-    val replyToText: String? = null
+    val replyToText: String? = null,
+    val isRead: Boolean = false
 )
 
 data class Comment(
@@ -266,15 +268,18 @@ fun PresenceIndicator(
     size: androidx.compose.ui.unit.Dp = 12.dp
 ) {
     var isOnline by remember { mutableStateOf(false) }
-    val db = FirebaseFirestore.getInstance()
+    val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance()
     val cleanUsername = username.replace("@", "").trim()
 
     LaunchedEffect(cleanUsername) {
         if (cleanUsername.isNotEmpty()) {
-            db.collection("users").document(cleanUsername)
-                .addSnapshotListener { snapshot, _ ->
-                    isOnline = snapshot?.getBoolean("isOnline") ?: false
+            val statusRef = rtdb.getReference("status/$cleanUsername/state")
+            statusRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                    isOnline = snapshot.getValue(String::class.java) == "online"
                 }
+                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+            })
         }
     }
 
@@ -285,6 +290,58 @@ fun PresenceIndicator(
                 .background(Color(0xFF4CAF50), CircleShape)
                 .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
         )
+    }
+}
+
+@Composable
+fun PresenceText(
+    username: String,
+    modifier: Modifier = Modifier
+) {
+    var status by remember { mutableStateOf("offline") }
+    var lastChanged by remember { mutableLongStateOf(0L) }
+    val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance()
+    val cleanUsername = username.replace("@", "").trim()
+
+    LaunchedEffect(cleanUsername) {
+        if (cleanUsername.isNotEmpty()) {
+            val statusRef = rtdb.getReference("status/$cleanUsername")
+            statusRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                    status = snapshot.child("state").getValue(String::class.java) ?: "offline"
+                    lastChanged = snapshot.child("last_changed").getValue(Long::class.java) ?: 0L
+                }
+                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+            })
+        }
+    }
+
+    Text(
+        text = if (status == "online") "В сети" else formatLastSeen(lastChanged),
+        fontSize = 12.sp,
+        color = if (status == "online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+        modifier = modifier
+    )
+}
+
+fun formatLastSeen(timestamp: Long): String {
+    if (timestamp <= 0) return "был(а) недавно"
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+
+    return when {
+        minutes < 1 -> "был(а) только что"
+        minutes < 60 -> "был(а) $minutes мин. назад"
+        hours < 24 -> "был(а) $hours час. назад"
+        days < 7 -> "был(а) $days дн. назад"
+        else -> {
+            val sdf = SimpleDateFormat("dd.MM.yy", Locale.getDefault())
+            "был(а) " + sdf.format(Date(timestamp))
+        }
     }
 }
 
@@ -479,40 +536,19 @@ fun ShimmerUserItem() {
 // 2. ГЛАВНАЯ ЛЕНТА ПОСТОВ
 // ==========================================
 @Composable
-fun MainMediaScreen(onUserClick: (String) -> Unit, onHashtagClick: (String) -> Unit = {}, header: @Composable (() -> Unit)? = null, currentTab: String = "Для вас") {
+fun MainMediaScreen(onUserClick: (String) -> Unit, onHashtagClick: (String) -> Unit = {}, header: @Composable (() -> Unit)? = null, currentTab: String = "Для вас", viewModel: FeedViewModel = viewModel()) {
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
     val myUsername = sharedPrefs.getString("username", "") ?: ""
 
     var showOnboarding by remember { mutableStateOf(sharedPrefs.getBoolean("is_first_launch", true)) }
 
-    var postsList by remember { mutableStateOf(listOf<Post>()) }
+    val postsList by viewModel.postsList.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     var followingList by remember { mutableStateOf(setOf<String>()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val db = FirebaseFirestore.getInstance()
-
-    // 1. Загрузка постов
-    LaunchedEffect(Unit) {
-        db.collection("zhirpem_posts")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    println("FIREBASE ERROR: ${error.message}")
-                    errorMessage = "Ошибка загрузки: ${error.message}"
-                    isLoading = false
-                    return@addSnapshotListener
-                }
-
-                if (snapshot != null) {
-                    postsList = snapshot.documents.mapNotNull { doc ->
-                        doc.toObject(Post::class.java)?.copy(id = doc.id)
-                    }
-                    isLoading = false
-                }
-            }
-    }
 
     // 2. Загрузка списка подписок
     LaunchedEffect(myUsername) {

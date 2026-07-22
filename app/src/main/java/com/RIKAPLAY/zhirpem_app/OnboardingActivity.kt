@@ -1,7 +1,8 @@
 package com.RIKAPLAY.zhirpem_app
 
-import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,7 +10,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayout
@@ -17,7 +18,7 @@ import com.google.android.material.tabs.TabLayoutMediator
 
 data class OnboardingPage(val imageResId: Int, val title: String, val description: String)
 
-class OnboardingActivity : ComponentActivity() {
+class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var viewPager: ViewPager2
     private lateinit var tabLayout: TabLayout
@@ -26,8 +27,14 @@ class OnboardingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        val sharedPrefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         if (!sharedPrefs.getBoolean("is_first_launch", true)) {
+            // Убеждаемся, что MainActivity включена (могла быть выключена при смене иконки)
+            packageManager.setComponentEnabledSetting(
+                ComponentName(this, MainActivity::class.java),
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
             startActivity(Intent(this, MainActivity::class.java))
             finish()
             return
@@ -92,8 +99,16 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     private fun finishOnboarding() {
-        val sharedPrefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         sharedPrefs.edit().putBoolean("is_first_launch", false).apply()
+        
+        // Убеждаемся, что MainActivity включена перед переходом
+        packageManager.setComponentEnabledSetting(
+            ComponentName(this, MainActivity::class.java),
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP
+        )
+
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }

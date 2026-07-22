@@ -5,10 +5,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.cloudinary.android.MediaManager
+import com.onesignal.OneSignal
+import com.onesignal.debug.LogLevel
 
 class ZhirpemApp : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        // 0. Инициализация OneSignal
+        OneSignal.Debug.logLevel = LogLevel.VERBOSE
+        OneSignal.initWithContext(this, "e52144a6-d4ea-46a4-870f-4089ec7a6af9")
 
         // 1. Инициализация Cloudinary
         val config = HashMap<String, String>()

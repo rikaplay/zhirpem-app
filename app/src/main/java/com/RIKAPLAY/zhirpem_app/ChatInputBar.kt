@@ -41,12 +41,24 @@ fun ChatInputBar(
     onStartVideoRecord: () -> Unit,
     onStopVideoRecord: (shouldSend: Boolean) -> Unit,
     onMoreClick: () -> Unit,
+    onTyping: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var textState by remember { mutableStateOf("") }
     var inputMode by remember { mutableStateOf(ChatInputMode.AUDIO) }
     var isRecording by remember { mutableStateOf(false) }
     var isLocked by remember { mutableStateOf(false) }
+
+    // Логика печатания
+    LaunchedEffect(textState) {
+        if (textState.isNotEmpty()) {
+            onTyping(true)
+            delay(3000)
+            onTyping(false)
+        } else {
+            onTyping(false)
+        }
+    }
 
     val buttonSizeAnimation by animateDpAsState(
         targetValue = if (isRecording || isLocked) 68.dp else 48.dp,

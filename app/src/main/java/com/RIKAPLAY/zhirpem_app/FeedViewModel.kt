@@ -20,10 +20,11 @@ class FeedViewModel : ViewModel() {
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     init {
-        loadPosts()
+        fetchPosts()
     }
 
-    private fun loadPosts() {
+    fun fetchPosts() {
+        _isLoading.value = true
         db.collection("zhirpem_posts")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->

@@ -3,12 +3,11 @@ package com.RIKAPLAY.zhirpem_app
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,12 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.withFrameMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -41,10 +43,21 @@ import kotlin.random.Random
 class NetworkMonitor(private val context: Context) {
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    fun isConnected(): Boolean {
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    suspend fun isActuallyConnected(): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val network = connectivityManager.activeNetwork ?: return@withContext false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return@withContext false
+            if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return@withContext false
+            
+            // Проверка реального доступа в интернет
+            val timeoutMs = 2000
+            val socket = java.net.Socket()
+            socket.connect(java.net.InetSocketAddress("8.8.8.8", 53), timeoutMs)
+            socket.close()
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 }
 
@@ -126,13 +139,15 @@ fun PixelDinoGame(
         modifier = Modifier
             .fillMaxWidth()
             .height(300.dp)
-            .clickable(
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                indication = null
-            ) {
-                if (!isJumping) {
-                    playerVelocity = jumpStrength
-                    isJumping = true
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitFirstDown()
+                        if (!isJumping) {
+                            playerVelocity = jumpStrength
+                            isJumping = true
+                        }
+                    }
                 }
             }
     ) {
@@ -151,16 +166,36 @@ fun PixelDinoGame(
 
             // Игрок (Смартфон)
             translate(left = playerX, top = groundY + playerY.dp.toPx() - playerSize) {
+                val pSize = Size(playerSize, playerSize)
+                // Белая обводка в 1 dp (4 направления)
+                val outline = 1.dp.toPx()
+                listOf(Offset(-outline, 0f), Offset(outline, 0f), Offset(0f, -outline), Offset(0f, outline)).forEach {
+                    translate(it.x, it.y) {
+                        with(smartphonePainter) {
+                            draw(size = pSize, colorFilter = ColorFilter.tint(Color.White))
+                        }
+                    }
+                }
                 with(smartphonePainter) {
-                    draw(size = Size(playerSize, playerSize))
+                    draw(size = pSize)
                 }
             }
 
             // Препятствия (Сервера)
             obstacles.forEach { obs ->
                 translate(left = obs.x.dp.toPx(), top = groundY - obs.height.dp.toPx()) {
+                    val oSize = Size(obs.width.dp.toPx(), obs.height.dp.toPx())
+                    // Белая обводка в 1 dp
+                    val outline = 1.dp.toPx()
+                    listOf(Offset(-outline, 0f), Offset(outline, 0f), Offset(0f, -outline), Offset(0f, outline)).forEach {
+                        translate(it.x, it.y) {
+                            with(serverPainter) {
+                                draw(size = oSize, colorFilter = ColorFilter.tint(Color.White))
+                            }
+                        }
+                    }
                     with(serverPainter) {
-                        draw(size = Size(obs.width.dp.toPx(), obs.height.dp.toPx()))
+                        draw(size = oSize)
                     }
                 }
             }
@@ -189,7 +224,7 @@ private data class Rect(val left: Float, val top: Float, val right: Float, val b
 // 4. ГЛАВНЫЙ ЭКРАН ОЖИДАНИЯ СЕТИ
 // ==========================================
 @Composable
-fun NetworkGameScreen(onConnected: () -> Unit) {
+fun NetworkGameScreen(onConnected: () -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("dino_game_prefs", Context.MODE_PRIVATE) }
     val networkMonitor = remember { NetworkMonitor(context) }
@@ -202,7 +237,7 @@ fun NetworkGameScreen(onConnected: () -> Unit) {
     // Проверка сети каждые 3 секунды
     LaunchedEffect(Unit) {
         while (isActive) {
-            if (networkMonitor.isConnected()) {
+            if (networkMonitor.isActuallyConnected()) {
                 onConnected()
             }
             delay(3000L)
@@ -234,6 +269,10 @@ fun NetworkGameScreen(onConnected: () -> Unit) {
                     GameButton("Таблица рекордов", Icons.Default.Leaderboard) { gameState = "LEADERBOARD" }
                     Spacer(modifier = Modifier.height(12.dp))
                     GameButton("Настройки", Icons.Default.Settings) { gameState = "SETTINGS" }
+                    Spacer(modifier = Modifier.height(24.dp))
+                    TextButton(onClick = onDismiss) {
+                        Text("Вернуться в приложение (offline)", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                    }
                 }
                 "PLAYING" -> {
                     PixelDinoGame(
@@ -311,16 +350,18 @@ fun NetworkStabilityWrapper(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val networkMonitor = remember { NetworkMonitor(context) }
     
-    var isConnected by remember { mutableStateOf(networkMonitor.isConnected()) }
+    var isConnected by remember { mutableStateOf(true) }
     var showGame by remember { mutableStateOf(false) }
+    var isManuallyDismissed by remember { mutableStateOf(false) }
     var offlineTime by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(Unit) {
         while (isActive) {
-            val currentStatus = networkMonitor.isConnected()
+            val currentStatus = networkMonitor.isActuallyConnected()
             if (currentStatus) {
                 isConnected = true
                 showGame = false
+                isManuallyDismissed = false
                 offlineTime = 0L
             } else {
                 if (isConnected) {
@@ -329,7 +370,7 @@ fun NetworkStabilityWrapper(content: @Composable () -> Unit) {
                     offlineTime = System.currentTimeMillis()
                 } else {
                     // Уже оффлайн, проверяем сколько времени
-                    if (!showGame && System.currentTimeMillis() - offlineTime > 10000) {
+                    if (!showGame && !isManuallyDismissed && offlineTime > 0 && System.currentTimeMillis() - offlineTime > 10000) {
                         showGame = true
                     }
                 }
@@ -338,11 +379,17 @@ fun NetworkStabilityWrapper(content: @Composable () -> Unit) {
         }
     }
 
-    if (showGame) {
-        NetworkGameScreen(onConnected = {
-            isConnected = true
-            showGame = false
-        })
+    if (showGame && !isManuallyDismissed) {
+        NetworkGameScreen(
+            onConnected = {
+                isConnected = true
+                showGame = false
+                isManuallyDismissed = false
+            },
+            onDismiss = {
+                isManuallyDismissed = true
+            }
+        )
     } else {
         content()
     }

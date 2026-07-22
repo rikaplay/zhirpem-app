@@ -15,6 +15,7 @@ val LocalFontSize = compositionLocalOf { 1.0f }
 
 val LocalGlassEnabled = compositionLocalOf { true }
 val LocalGlassAlpha = compositionLocalOf { 0.4f }
+val LocalBackgroundBlurEnabled = compositionLocalOf { true }
 
 class SettingsManager(context: Context) {
     private val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
@@ -35,18 +36,28 @@ class SettingsManager(context: Context) {
     var glassAlpha: Float
         get() = prefs.getFloat("glass_alpha", 0.4f)
         set(value) = prefs.edit().putFloat("glass_alpha", value).apply()
+
+    var isSplashScreenEnabled: Boolean
+        get() = prefs.getBoolean("splash_screen_enabled", true)
+        set(value) = prefs.edit().putBoolean("splash_screen_enabled", value).apply()
+
+    var isSplashSoundEnabled: Boolean
+        get() = prefs.getBoolean("splash_sound_enabled", true)
+        set(value) = prefs.edit().putBoolean("splash_sound_enabled", value).apply()
 }
 
 fun changeAppIcon(context: Context, newAliasName: String) {
     val packageManager = context.packageManager
     val packageName = context.packageName
     
-    val aliases = listOf("MainActivityAlias1", "MainActivityAlias2")
+    // Список алиасов
+    val aliases = listOf("MainActivityAlias1", "MainActivityAlias2", "MainActivityAlias3")
     
     aliases.forEach { alias ->
         val state = if (alias == newAliasName) 
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED 
-            else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        else 
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             
         packageManager.setComponentEnabledSetting(
             ComponentName(packageName, "$packageName.$alias"),
@@ -54,4 +65,12 @@ fun changeAppIcon(context: Context, newAliasName: String) {
             PackageManager.DONT_KILL_APP
         )
     }
+
+    // MainActivity ВСЕГДА должна быть включена, так как это целевая активность для всех алиасов
+    // и основной экран приложения. Ее отключение приводит к ActivityNotFoundException.
+    packageManager.setComponentEnabledSetting(
+        ComponentName(packageName, "$packageName.MainActivity"),
+        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+        PackageManager.DONT_KILL_APP
+    )
 }

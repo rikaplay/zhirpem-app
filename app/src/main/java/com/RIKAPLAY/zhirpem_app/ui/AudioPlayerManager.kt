@@ -2,7 +2,6 @@ package com.RIKAPLAY.zhirpem_app.ui
 
 import android.content.Context
 import android.media.MediaPlayer
-import android.media.PlaybackParams
 import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.*
@@ -51,7 +50,7 @@ class AudioPlayerManager(private val context: Context) {
         playbackJob = null
     }
 
-    fun togglePlayPause(): Boolean {
+    fun togglePlayPause(onProgressUpdate: (Float, Long) -> Unit): Boolean {
         mediaPlayer?.let {
             if (it.isPlaying) {
                 it.pause()
@@ -59,8 +58,7 @@ class AudioPlayerManager(private val context: Context) {
                 return false
             } else {
                 it.start()
-                // Re-start updates - needs the callback, so maybe this method needs a callback too
-                // For simplicity in this manager, we might need a different design
+                startProgressUpdates(onProgressUpdate)
                 return true
             }
         }
@@ -81,17 +79,11 @@ class AudioPlayerManager(private val context: Context) {
     }
 
     private fun applySpeed(speed: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            mediaPlayer?.let {
-                try {
-                    if (it.isPlaying) {
-                        it.playbackParams = it.playbackParams.setSpeed(speed)
-                    } else {
-                        it.playbackParams = PlaybackParams().setSpeed(speed)
-                    }
-                } catch (e: Exception) {
-                    Log.e("AudioPlayer", "Error setting speed", e)
-                }
+        mediaPlayer?.let {
+            try {
+                it.playbackParams = it.playbackParams.setSpeed(speed)
+            } catch (e: Exception) {
+                Log.e("AudioPlayer", "Error setting speed", e)
             }
         }
     }

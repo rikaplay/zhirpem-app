@@ -1,11 +1,8 @@
 package com.RIKAPLAY.zhirpem_app
 
-import android.media.MediaPlayer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -17,46 +14,57 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(
     isEnabled: Boolean,
-    onNavigateToMain: () -> Unit
+    onNavigateToMain: () -> Unit,
+    viewModel: FeedViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    var startAnimation by remember { mutableStateOf(false) }
+    val settingsManager = remember { SettingsManager(context) }
+    var isScaled by remember { mutableStateOf(false) }
+
+    // Параллельная загрузка данных
+    LaunchedEffect(Unit) {
+        viewModel.fetchPosts()
+    }
     
     val scale by animateFloatAsState(
-        targetValue = if (startAnimation) 4f else 1f,
+        targetValue = if (isScaled) 4f else 1f,
         animationSpec = tween(800),
         label = "scale"
     )
     
     val alpha by animateFloatAsState(
-        targetValue = if (startAnimation) 0f else 1f,
+        targetValue = if (isScaled) 0f else 1f,
         animationSpec = tween(800),
         label = "alpha"
     )
 
-    val mediaPlayer = remember {
-        try {
-            MediaPlayer.create(context, R.raw.splash_sound)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            mediaPlayer?.release()
-        }
-    }
-
-    LaunchedEffect(Unit) {
+    // Автоматический запуск логики
+    LaunchedEffect(isEnabled) {
         if (!isEnabled) {
             onNavigateToMain()
+            return@LaunchedEffect
         }
+
+        // Задержка перед началом анимации
+        delay(200)
+        
+        // Запуск фонового звука через синглтон, если включен в настройках
+        if (settingsManager.isSplashSoundEnabled) {
+            SoundManager.playSplashSound(context)
+        }
+        
+        // Запуск анимации
+        isScaled = true
+        
+        // Ожидание завершения анимации (800мс) и переход
+        delay(800)
+        onNavigateToMain()
     }
 
     if (isEnabled) {
@@ -71,23 +79,7 @@ fun SplashScreen(
                     .size(150.dp)
                     .scale(scale)
                     .alpha(alpha)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        if (!startAnimation) {
-                            mediaPlayer?.start()
-                            startAnimation = true
-                        }
-                    }
             )
-        }
-
-        LaunchedEffect(startAnimation) {
-            if (startAnimation) {
-                delay(800)
-                onNavigateToMain()
-            }
         }
     }
 }

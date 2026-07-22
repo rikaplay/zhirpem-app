@@ -1,10 +1,11 @@
 package com.RIKAPLAY.zhirpem_app
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -38,7 +39,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
             ) {
                 // Изображение
                 AsyncImage(
-                    model = "https://i.imgur.com/uRjXp7D.png", // Замените на реальную ссылку или R.drawable
+                    model = R.drawable.update_banner,
                     contentDescription = "What's New Image",
                     modifier = Modifier
                         .fillMaxWidth()
@@ -75,8 +76,17 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     )
 
                     features.forEach { feature ->
-                        Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                            Text(text = "•", modifier = Modifier.padding(end = 8.dp))
+                        Row(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp).padding(top = 2.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = feature,
                                 style = MaterialTheme.typography.bodyLarge,

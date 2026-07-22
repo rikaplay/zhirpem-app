@@ -51,3 +51,17 @@ suspend fun <T> searchItems(
         searchAction()
     }
 }
+
+/**
+ * Специализированный поиск по постам.
+ */
+suspend fun searchPosts(query: String, posts: List<Post>): List<Post> {
+    return searchItems(query, posts) { it.text }
+}
+
+/**
+ * Специализированный поиск по пользователям.
+ */
+suspend fun searchUsers(query: String, users: List<User>): List<User> {
+    return searchItems(query, users) { "${it.name} ${it.username} ${it.id}" }
+}

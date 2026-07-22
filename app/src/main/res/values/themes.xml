@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.Zhirpem_app" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Базовая тема приложения, теперь наследуется от AppCompat для совместимости с ViewPager2 и OnboardingActivity -->
+    <style name="Theme.Zhirpem_app" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- Настройка цветов (используем темный фон как в ваших макетах) -->
+        <item name="android:windowBackground">#121212</item>
+        <item name="colorPrimary">#2196F3</item>
+        <item name="colorPrimaryDark">#121212</item>
+        <item name="colorAccent">#2196F3</item>
+    </style>
 </resources>

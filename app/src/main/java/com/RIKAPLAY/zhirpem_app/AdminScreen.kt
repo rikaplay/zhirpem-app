@@ -1,12 +1,19 @@
 package com.RIKAPLAY.zhirpem_app
 
+import android.net.Uri
+import android.text.Html
+import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -21,13 +28,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.cloudinary.android.MediaManager
+import com.cloudinary.android.callback.ErrorInfo
+import com.cloudinary.android.callback.UploadCallback
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.util.Log
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminPanelScreen(onBack: () -> Unit) {
     val db = FirebaseFirestore.getInstance()
-    var currentTab by remember { mutableStateOf("Users") } // Вкладки: "Users" или "Posts"
+    var currentTab by remember { mutableStateOf("Users") } // Вкладки: "Users", "Posts", "Notifications"
     
     // Списки данных
     var users by remember { mutableStateOf(listOf<Map<String, Any>>()) }
@@ -36,13 +57,15 @@ fun AdminPanelScreen(onBack: () -> Unit) {
 
     // Загрузка данных
     LaunchedEffect(currentTab) {
+        if (currentTab == "Notifications") return@LaunchedEffect
+        
         isLoading = true
         if (currentTab == "Users") {
             db.collection("users").get().addOnSuccessListener { result ->
                 users = result.map { it.data + ("id" to it.id) }
                 isLoading = false
             }.addOnFailureListener { isLoading = false }
-        } else {
+        } else if (currentTab == "Posts") {
             db.collection("zhirpem_posts").get().addOnSuccessListener { result ->
                 posts = result.map { it.data + ("id" to it.id) }
                 isLoading = false
@@ -80,8 +103,8 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                         containerColor = if (currentTab == "Users") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (currentTab == "Users") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                ) { Text("Пользователи") }
-                Spacer(modifier = Modifier.width(8.dp))
+                ) { Text("Юзеры", fontSize = 12.sp) }
+                Spacer(modifier = Modifier.width(4.dp))
                 Button(
                     onClick = { currentTab = "Posts" }, 
                     modifier = Modifier.weight(1f),
@@ -89,7 +112,16 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                         containerColor = if (currentTab == "Posts") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (currentTab == "Posts") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                ) { Text("Посты") }
+                ) { Text("Посты", fontSize = 12.sp) }
+                Spacer(modifier = Modifier.width(4.dp))
+                Button(
+                    onClick = { currentTab = "Notifications" }, 
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (currentTab == "Notifications") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (currentTab == "Notifications") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) { Text("Пуши", fontSize = 12.sp) }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -100,29 +132,32 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                 }
             } else {
                 // Отображение контента
-                if (currentTab == "Users") {
-                    FastUserAssigner(db) // Блок быстрого поиска и выдачи прав
-                    
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(users) { user ->
-                            UserAdminItem(user, db) { 
-                                // Обновляем список после действия
-                                db.collection("users").get().addOnSuccessListener { result ->
-                                    users = result.map { it.data + ("id" to it.id) }
+                when (currentTab) {
+                    "Users" -> {
+                        FastUserAssigner(db)
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(users) { user ->
+                                UserAdminItem(user, db) { 
+                                    db.collection("users").get().addOnSuccessListener { result ->
+                                        users = result.map { it.data + ("id" to it.id) }
+                                    }
                                 }
                             }
                         }
                     }
-                } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(posts) { post ->
-                            PostAdminItem(post, db) { 
-                                // Обновляем список после удаления
-                                db.collection("zhirpem_posts").get().addOnSuccessListener { result ->
-                                    posts = result.map { it.data + ("id" to it.id) }
+                    "Posts" -> {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(posts) { post ->
+                                PostAdminItem(post, db) { 
+                                    db.collection("zhirpem_posts").get().addOnSuccessListener { result ->
+                                        posts = result.map { it.data + ("id" to it.id) }
+                                    }
                                 }
                             }
                         }
+                    }
+                    "Notifications" -> {
+                        NotificationAdminTab(db)
                     }
                 }
             }
@@ -304,6 +339,216 @@ fun PostAdminItem(post: Map<String, Any>, db: FirebaseFirestore, onAction: () ->
                 Text("Удалить этот пост")
             }
         }
+    }
+}
+
+@Composable
+fun NotificationAdminTab(db: FirebaseFirestore) {
+    val context = LocalContext.current
+    var title by remember { mutableStateOf("") }
+    var htmlBody by remember { mutableStateOf("") }
+    var imageUrl by remember { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
+    
+    val scrollState = rememberScrollState()
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            // Загрузка в Cloudinary
+            val requestId = MediaManager.get().upload(it)
+                .callback(object : UploadCallback {
+                    override fun onStart(requestId: String) {}
+                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
+                    override fun onSuccess(requestId: String, resultData: Map<*, *>) {
+                        imageUrl = resultData["secure_url"] as String
+                    }
+                    override fun onError(requestId: String, error: ErrorInfo) {
+                        Toast.makeText(context, "Ошибка загрузки: ${error.description}", Toast.LENGTH_SHORT).show()
+                    }
+                    override fun onReschedule(requestId: String, error: ErrorInfo) {}
+                })
+                .dispatch()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(bottom = 32.dp)
+    ) {
+        Text("Создание уведомления", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = title,
+            onValueChange = { title = it },
+            label = { Text("Заголовок") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Rich Text Editor Helpers
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            EditorButton("B") { htmlBody += "<b></b>" }
+            EditorButton("I") { htmlBody += "<i></i>" }
+            EditorButton("Link") { htmlBody += "<a href='URL'>Текст</a>" }
+            EditorButton("Color") { htmlBody += "<font color='#FF0000'></font>" }
+            EditorButton("Mono") { htmlBody += "<font face='monospace'></font>" }
+            EditorButton("Image") { galleryLauncher.launch("image/*") }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        OutlinedTextField(
+            value = htmlBody,
+            onValueChange = { htmlBody = it },
+            label = { Text("Текст (HTML)") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = imageUrl,
+            onValueChange = { imageUrl = it },
+            label = { Text("URL картинки (опционально)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Предпросмотр:", fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                AndroidView(
+                    factory = { ctx -> TextView(ctx).apply { textSize = 14f } },
+                    update = { it.text = Html.fromHtml(htmlBody, Html.FROM_HTML_MODE_COMPACT) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = {
+                if (title.isNotEmpty() && htmlBody.isNotEmpty()) {
+                    isSending = true
+                    // Используем CoroutineScope для запуска в фоновом потоке
+                    CoroutineScope(Dispatchers.Main).launch {
+                        val success = withContext(Dispatchers.IO) {
+                            sendGlobalNotification(db, title, htmlBody, imageUrl)
+                        }
+                        isSending = false
+                        if (success) {
+                            Toast.makeText(context, "Отправлено всем пользователям!", Toast.LENGTH_SHORT).show()
+                            title = ""
+                            htmlBody = ""
+                            imageUrl = ""
+                        } else {
+                            Toast.makeText(context, "Ошибка при отправке. Проверьте Logcat", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isSending,
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            if (isSending) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+            else Text("Отправить всем пользователям (Push + DB)")
+        }
+    }
+}
+
+@Composable
+fun EditorButton(text: String, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+        modifier = Modifier.height(32.dp)
+    ) {
+        Text(text, fontSize = 10.sp)
+    }
+}
+
+suspend fun sendGlobalNotification(db: FirebaseFirestore, title: String, htmlBody: String, imageUrl: String): Boolean = withContext(Dispatchers.IO) {
+    try {
+        // 1. Сохранение в Firestore (выполняется синхронно в IO через tasks-play-services)
+        val notificationData = hashMapOf(
+            "title" to title,
+            "htmlBody" to htmlBody,
+            "bigPictureUrl" to imageUrl,
+            "timestamp" to FieldValue.serverTimestamp(),
+            "type" to "ADMIN",
+            "receiverId" to "ALL",
+            "senderName" to "Zhirpem"
+        )
+
+        // Дожидаемся завершения записи в БД
+        com.google.android.gms.tasks.Tasks.await(db.collection("notifications").add(notificationData))
+
+        // 2. Отправка через OneSignal REST API
+        val client = OkHttpClient()
+        val json = JSONObject()
+        json.put("app_id", "e52144a6-d4ea-46a4-870f-4089ec7a6af9")
+        
+        // Отправка ВСЕМ активным подписчикам
+        json.put("included_segments", org.json.JSONArray(listOf("Subscribed Users")))
+        
+        val contents = JSONObject()
+        val plainText = Html.fromHtml(htmlBody, Html.FROM_HTML_MODE_COMPACT).toString()
+        contents.put("en", plainText)
+        json.put("contents", contents)
+        
+        val headings = JSONObject()
+        headings.put("en", title)
+        json.put("headings", headings)
+
+        if (imageUrl.isNotEmpty()) {
+            json.put("big_picture", imageUrl)
+        }
+
+        val requestBody = json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url("https://onesignal.com/api/v1/notifications")
+                .post(requestBody)
+                .addHeader("Authorization", "Basic os_v2_app_4uqujjwu5jdkjbypice6y6tk7hgycpqrjz7el4eil7itrf3xlinih6ikgpfq6o5l43izejzh4wdmjtrszqsdjvzj455p7mvulqousny")
+                .addHeader("Content-Type", "application/json; charset=utf-8")
+                .build()
+
+            Log.d("PushDebug", "Sending to AppID: e52144a6-d4ea-46a4-870f-4089ec7a6af9")
+            
+            val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: ""
+        val isSuccessful = response.isSuccessful
+        
+        if (!isSuccessful) {
+            Log.e("PushError", "OneSignal API Error: Code ${response.code}, Body: $responseBody")
+        }
+        
+        response.close()
+        isSuccessful
+    } catch (e: Exception) {
+        Log.e("PushError", "Critical Failure: ${e.message}", e)
+        false
     }
 }
 

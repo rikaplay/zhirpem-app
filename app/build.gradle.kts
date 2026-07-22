@@ -12,8 +12,8 @@ android {
         applicationId = "com.RIKAPLAY.zhirpem_app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.5.1"
+        versionCode = 3
+        versionName = "1.5.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -73,11 +73,16 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.6.0")
     implementation("com.google.firebase:firebase-messaging:23.4.0")
     implementation("com.google.firebase:firebase-storage-ktx:21.0.1")
+    implementation("com.google.firebase:firebase-database-ktx:21.0.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.cloudinary:cloudinary-android:3.1.2")
     implementation(libs.coil.gif)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.viewpager2)
+    implementation(libs.google.material)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.appcompat)
 
     val cameraxVersion = "1.3.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
@@ -89,4 +94,7 @@ dependencies {
 
     // Библиотека от Google для удобного запроса разрешений в Compose
     implementation("com.google.accompanist:accompanist-permissions:0.37.3")
+
+    // OneSignal Push Notifications
+    implementation("com.onesignal:OneSignal:[5.0.0, 5.99.99]")
 }

@@ -2,6 +2,7 @@ package com.RIKAPLAY.zhirpem_app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -21,6 +22,25 @@ fun GlassBottomBar(
     selectedLabel: String,
     onItemClick: (String) -> Unit
 ) {
+    val glassAlpha = LocalGlassAlpha.current
+    val isDark = isSystemInDarkTheme()
+
+    // Динамическая логика для обеспечения видимости на светлой теме
+    val dynamicAlpha = if (!isDark && isGlassEnabled) (glassAlpha + 0.15f).coerceAtMost(1f) else glassAlpha
+    val dynamicBackground = if (isGlassEnabled) {
+        if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = dynamicAlpha)
+        else Color.White.copy(alpha = 0.7f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+
+    val dynamicBorderColor = if (isGlassEnabled) {
+        if (isDark) Color.White.copy(alpha = 0.15f)
+        else Color.Black.copy(alpha = 0.1f)
+    } else {
+        Color.Transparent
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -38,8 +58,8 @@ fun GlassBottomBar(
                     if (isGlassEnabled) {
                         Modifier
                             .blur(20.dp)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.4f))
-                            .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                            .background(dynamicBackground)
+                            .border(1.dp, dynamicBorderColor, CircleShape)
                     } else {
                         Modifier.background(MaterialTheme.colorScheme.surface)
                     }
