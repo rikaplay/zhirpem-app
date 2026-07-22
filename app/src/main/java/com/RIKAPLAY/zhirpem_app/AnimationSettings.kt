@@ -50,27 +50,19 @@ fun changeAppIcon(context: Context, newAliasName: String) {
     val packageManager = context.packageManager
     val packageName = context.packageName
     
-    // Список алиасов
-    val aliases = listOf("MainActivityAlias1", "MainActivityAlias2", "MainActivityAlias3")
+    // Список всех возможных точек входа (основная активность + алиасы)
+    val components = listOf("MainActivity", "MainActivityAlias1", "MainActivityAlias2", "MainActivityAlias3")
     
-    aliases.forEach { alias ->
-        val state = if (alias == newAliasName) 
+    components.forEach { component ->
+        val state = if (component == newAliasName) 
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED 
         else 
             PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             
         packageManager.setComponentEnabledSetting(
-            ComponentName(packageName, "$packageName.$alias"),
+            ComponentName(packageName, "$packageName.$component"),
             state,
             PackageManager.DONT_KILL_APP
         )
     }
-
-    // MainActivity ВСЕГДА должна быть включена, так как это целевая активность для всех алиасов
-    // и основной экран приложения. Ее отключение приводит к ActivityNotFoundException.
-    packageManager.setComponentEnabledSetting(
-        ComponentName(packageName, "$packageName.MainActivity"),
-        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-        PackageManager.DONT_KILL_APP
-    )
 }

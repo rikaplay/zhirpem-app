@@ -1,8 +1,6 @@
 package com.RIKAPLAY.zhirpem_app
 
-import android.content.ComponentName
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -29,12 +27,6 @@ class OnboardingActivity : AppCompatActivity() {
         
         val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         if (!sharedPrefs.getBoolean("is_first_launch", true)) {
-            // Убеждаемся, что MainActivity включена (могла быть выключена при смене иконки)
-            packageManager.setComponentEnabledSetting(
-                ComponentName(this, MainActivity::class.java),
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                PackageManager.DONT_KILL_APP
-            )
             startActivity(Intent(this, MainActivity::class.java))
             finish()
             return
@@ -101,14 +93,6 @@ class OnboardingActivity : AppCompatActivity() {
     private fun finishOnboarding() {
         val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         sharedPrefs.edit().putBoolean("is_first_launch", false).apply()
-        
-        // Убеждаемся, что MainActivity включена перед переходом
-        packageManager.setComponentEnabledSetting(
-            ComponentName(this, MainActivity::class.java),
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            PackageManager.DONT_KILL_APP
-        )
-
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }
