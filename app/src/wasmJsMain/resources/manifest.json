@@ -1,0 +1,20 @@
+{
+  "short_name": "Zhirpem",
+  "name": "Zhirpem App",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f0f12",
+  "display": "standalone",
+  "theme_color": "#0f0f12"
+}
