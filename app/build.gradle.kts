@@ -31,14 +31,14 @@ kotlin {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
             
             // Firebase Multiplatform (GitLive)
-            implementation("dev.gitlive:firebase-firestore:1.13.0")
-            implementation("dev.gitlive:firebase-database:1.13.0")
-            implementation("dev.gitlive:firebase-storage:1.13.0")
-            implementation("dev.gitlive:firebase-auth:1.13.0")
+            implementation("dev.gitlive:firebase-firestore:1.15.0")
+            implementation("dev.gitlive:firebase-database:1.15.0")
+            implementation("dev.gitlive:firebase-storage:1.15.0")
+            implementation("dev.gitlive:firebase-auth:1.15.0")
             
             // Coil 3 (Multiplatform)
-            implementation("io.coil-kt.coil3:coil-compose:3.5.0")
-            implementation("io.coil-kt.coil3:coil-network-ktor3:3.5.0")
+            implementation("io.coil-kt.coil3:coil-compose:3.0.4")
+            implementation("io.coil-kt.coil3:coil-network-ktor3:3.0.4")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
         }
         
