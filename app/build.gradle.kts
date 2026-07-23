@@ -7,6 +7,11 @@ plugins {
     kotlin("plugin.serialization") version "2.1.0"
 }
 
+repositories {
+    google()
+    mavenCentral()
+}
+
 kotlin {
     androidTarget()
     
@@ -31,10 +36,10 @@ kotlin {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
             
             // Firebase Multiplatform (GitLive)
-            implementation("dev.gitlive:firebase-firestore:1.15.0")
-            implementation("dev.gitlive:firebase-database:1.15.0")
-            implementation("dev.gitlive:firebase-storage:1.15.0")
-            implementation("dev.gitlive:firebase-auth:1.15.0")
+            implementation("dev.gitlive:firebase-firestore:2.5.0")
+            implementation("dev.gitlive:firebase-database:2.5.0")
+            implementation("dev.gitlive:firebase-storage:2.5.0")
+            implementation("dev.gitlive:firebase-auth:2.5.0")
             
             // Coil 3 (Multiplatform)
             implementation("io.coil-kt.coil3:coil-compose:3.0.4")

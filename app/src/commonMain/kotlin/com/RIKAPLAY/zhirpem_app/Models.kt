@@ -38,8 +38,7 @@ data class Post(
     val likedBy: List<String> = emptyList(),
     val bookmarkedBy: List<String> = emptyList(),
     val repostedBy: List<String> = emptyList(),
-    // Timestamp is a bit tricky with serialization, GitLive usually handles it.
-    // If it fails, we might need a custom serializer.
+    // GitLive 2.x handles Timestamp with its own serializer
     // val timestamp: Timestamp? = null, 
     val isAuthorBanned: Boolean = false,
     val authorNameColor: String? = null,
@@ -62,6 +61,7 @@ data class Community(
 data class User(
     val username: String = "",
     val name: String = "",
+    val password: String = "",
     val avatarUrl: String? = null,
     val nameColor: String? = null,
     val isBanned: Boolean = false,

@@ -35,7 +35,7 @@ class FeedViewModel {
             try {
                 db.collection("zhirpem_posts")
                     .orderBy("timestamp", Direction.DESCENDING)
-                    .snapshots
+                    .snapshots()
                     .collect { snapshot ->
                         _postsList.value = snapshot.documents.map { doc ->
                             doc.data<Post>().copy(id = doc.id)

@@ -59,10 +59,16 @@ fun AuthScreenContent(onAuthSuccess: () -> Unit) {
                     try {
                         val db = Firebase.firestore
                         val userDoc = db.collection("users").document(username.lowercase().trim()).get()
-                        if (userDoc.exists && userDoc.get<String>("password") == password) {
-                            onAuthSuccess()
+                        if (userDoc.exists) {
+                            // GitLive 2.x data access
+                            val userData: User = userDoc.data()
+                            if (userData.password == password) {
+                                onAuthSuccess()
+                            } else {
+                                errorMessage = "Неверный пароль"
+                            }
                         } else {
-                            errorMessage = "Неверный логин или пароль"
+                            errorMessage = "Пользователь не найден"
                         }
                     } catch (e: Exception) {
                         errorMessage = "Ошибка: ${e.message}"
