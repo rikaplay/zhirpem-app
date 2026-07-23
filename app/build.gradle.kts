@@ -7,15 +7,11 @@ plugins {
     kotlin("plugin.serialization") version "2.1.0"
 }
 
-repositories {
-    google()
-    mavenCentral()
-}
-
 kotlin {
     androidTarget()
     
     js(IR) {
+        moduleName = "app"
         browser {
             commonWebpackConfig {
                 outputFileName = "composeApp.js"
@@ -33,21 +29,22 @@ kotlin {
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
             
-            // Firebase Multiplatform (GitLive) - теперь JS версия найдется!
-            implementation("dev.gitlive:firebase-firestore:2.1.0")
-            implementation("dev.gitlive:firebase-database:2.1.0")
-            implementation("dev.gitlive:firebase-storage:2.1.0")
-            implementation("dev.gitlive:firebase-auth:2.1.0")
+            // Firebase Multiplatform (GitLive)
+            implementation("dev.gitlive:firebase-firestore:2.5.0")
+            implementation("dev.gitlive:firebase-database:2.5.0")
+            implementation("dev.gitlive:firebase-storage:2.5.0")
+            implementation("dev.gitlive:firebase-auth:2.5.0")
             
             // Coil 3
             implementation("io.coil-kt.coil3:coil-compose:3.0.4")
             implementation("io.coil-kt.coil3:coil-network-ktor3:3.0.4")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
         }
         
         val jsMain by getting {
             dependencies {
+                implementation(compose.html.core)
             }
         }
 
@@ -96,17 +93,12 @@ android {
         targetSdk = 36
         versionCode = 3
         versionName = "1.5.2"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
@@ -116,18 +108,4 @@ android {
     buildFeatures {
         compose = true
     }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
-}
-
-dependencies {
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.junit)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-    debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -23,7 +23,8 @@ class FeedViewModel {
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    private val viewModelScope = CoroutineScope(Dispatchers.Main)
+    // Using a manual scope since we don't have ViewModel in commonMain yet
+    private val scope = CoroutineScope(Dispatchers.Main)
 
     init {
         fetchPosts()
@@ -31,14 +32,14 @@ class FeedViewModel {
 
     fun fetchPosts() {
         _isLoading.value = true
-        viewModelScope.launch {
+        scope.launch {
             try {
                 db.collection("zhirpem_posts")
                     .orderBy("timestamp", Direction.DESCENDING)
                     .snapshots()
                     .collect { snapshot ->
                         _postsList.value = snapshot.documents.map { doc ->
-                            doc.data<Post>().copy(id = doc.id)
+                            doc.data(Post.serializer()).copy(id = doc.id)
                         }
                         _isLoading.value = false
                     }

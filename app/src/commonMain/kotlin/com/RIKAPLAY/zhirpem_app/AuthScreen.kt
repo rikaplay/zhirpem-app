@@ -60,8 +60,8 @@ fun AuthScreenContent(onAuthSuccess: () -> Unit) {
                         val db = Firebase.firestore
                         val userDoc = db.collection("users").document(username.lowercase().trim()).get()
                         if (userDoc.exists) {
-                            // GitLive 2.x data access
-                            val userData: User = userDoc.data()
+                            // GitLive 2.x Correct way to get data
+                            val userData: User = userDoc.data(User.serializer())
                             if (userData.password == password) {
                                 onAuthSuccess()
                             } else {
