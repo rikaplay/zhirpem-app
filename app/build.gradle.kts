@@ -7,15 +7,10 @@ plugins {
     kotlin("plugin.serialization") version "2.1.0"
 }
 
-repositories {
-    google()
-    mavenCentral()
-}
-
 kotlin {
     androidTarget()
     
-    js(IR) {
+    js {
         browser {
             commonWebpackConfig {
                 outputFileName = "composeApp.js"
@@ -35,7 +30,7 @@ kotlin {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
             
-            // Firebase Multiplatform (GitLive)
+            // Firebase Multiplatform
             implementation("dev.gitlive:firebase-firestore:2.5.0")
             implementation("dev.gitlive:firebase-database:2.5.0")
             implementation("dev.gitlive:firebase-storage:2.5.0")
@@ -87,7 +82,8 @@ kotlin {
     }
 }
 
-android {
+// Новый формат для AGP 9.2+
+extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
     namespace = "com.RIKAPLAY.zhirpem_app"
     compileSdk = 36
 
