@@ -7,11 +7,15 @@ plugins {
     kotlin("plugin.serialization") version "2.1.0"
 }
 
+repositories {
+    google()
+    mavenCentral()
+}
+
 kotlin {
     androidTarget()
     
     js(IR) {
-        moduleName = "app"
         browser {
             commonWebpackConfig {
                 outputFileName = "composeApp.js"
@@ -96,7 +100,7 @@ android {
     }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -108,4 +112,12 @@ android {
     buildFeatures {
         compose = true
     }
+}
+
+dependencies {
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    debugImplementation(libs.androidx.compose.ui.tooling)
 }
