@@ -25,6 +25,20 @@
             font-family: sans-serif;
         }
     </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js";
+        const firebaseConfig = {
+            apiKey: "AIzaSyBymqdB10OT-T3Wq7H7tUb8YUci1u-qSjI",
+            authDomain: "zhirpem-app.firebaseapp.com",
+            projectId: "zhirpem-app",
+            storageBucket: "zhirpem-app.firebasestorage.app",
+            messagingSenderId: "628761008562",
+            appId: "1:628761008562:web:7848461f428e2b3befacab" // constructed web id, might need user check
+        };
+        initializeApp(firebaseConfig);
+    </script>
+
     <script src="composeApp.js"></script>
 </head>
 <body>
