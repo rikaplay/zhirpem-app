@@ -15,8 +15,7 @@ repositories {
 kotlin {
     androidTarget()
     
-    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
-    wasmJs {
+    js(IR) {
         browser {
             commonWebpackConfig {
                 outputFileName = "composeApp.js"
@@ -35,19 +34,19 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
             
-            // Firebase Multiplatform (GitLive)
-            implementation("dev.gitlive:firebase-firestore:2.5.0")
-            implementation("dev.gitlive:firebase-database:2.5.0")
-            implementation("dev.gitlive:firebase-storage:2.5.0")
-            implementation("dev.gitlive:firebase-auth:2.5.0")
+            // Firebase Multiplatform (GitLive) - теперь JS версия найдется!
+            implementation("dev.gitlive:firebase-firestore:2.1.0")
+            implementation("dev.gitlive:firebase-database:2.1.0")
+            implementation("dev.gitlive:firebase-storage:2.1.0")
+            implementation("dev.gitlive:firebase-auth:2.1.0")
             
-            // Coil 3 (Multiplatform)
+            // Coil 3
             implementation("io.coil-kt.coil3:coil-compose:3.0.4")
             implementation("io.coil-kt.coil3:coil-network-ktor3:3.0.4")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
         }
         
-        val wasmJsMain by getting {
+        val jsMain by getting {
             dependencies {
             }
         }
@@ -99,15 +98,6 @@ android {
         versionName = "1.5.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
-        externalNativeBuild {
-            ndkBuild {
-                arguments("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
-            }
-            cmake {
-                arguments("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
-            }
-        }
     }
 
     buildTypes {
