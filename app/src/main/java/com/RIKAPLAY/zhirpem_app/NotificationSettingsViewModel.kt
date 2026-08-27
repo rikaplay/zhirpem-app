@@ -31,13 +31,14 @@ class NotificationSettingsViewModel(
 
     fun toggleCategory(type: NotificationType) {
         viewModelScope.launch {
-            val current = settings.value.enabledCategories.toMutableSet()
-            if (current.contains(type)) {
-                current.remove(type)
+            val currentSettings = settings.value
+            val currentCategories = currentSettings.enabledCategories.toMutableSet()
+            if (currentCategories.contains(type)) {
+                currentCategories.remove(type)
             } else {
-                current.add(type)
+                currentCategories.add(type)
             }
-            repository.updateEnabledCategories(current)
+            repository.updateEnabledCategories(currentCategories)
         }
     }
 }

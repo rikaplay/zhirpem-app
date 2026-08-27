@@ -34,9 +34,6 @@ object NotificationRepository {
             "timestamp" to Timestamp.now()
         )
         db.collection("notifications").add(notification)
-
-        // 3. Отправка Push (через существующий механизм в MainActivity или OneSignal)
-        // Здесь можно вызвать Firebase Messaging или OneSignal REST API
     }
 
     private suspend fun checkFilters(receiverId: String, senderId: String, type: NotificationType): Boolean {
@@ -44,12 +41,15 @@ object NotificationRepository {
             val userDoc = db.collection("users").document(receiverId).get().await()
             val settingsMap = userDoc.get("notificationSettings") as? Map<*, *>
             
-            val senderFilter = NotificationSenderFilter.valueOf(
-                settingsMap?.get("senderFilter") as? String ?: NotificationSenderFilter.ALL.name
-            )
-            val enabledCategories = (settingsMap?.get("enabledCategories") as? List<*>)
+            val senderFilterStr = settingsMap?.get("senderFilter") as? String
+            val senderFilter = if (senderFilterStr != null) {
+                try { NotificationSenderFilter.valueOf(senderFilterStr) } catch(e: Exception) { NotificationSenderFilter.ALL }
+            } else NotificationSenderFilter.ALL
+
+            val enabledCategoriesList = settingsMap?.get("enabledCategories") as? List<*>
+            val enabledCategories = enabledCategoriesList
                 ?.mapNotNull { try { NotificationType.valueOf(it as String) } catch (e: Exception) { null } }
-                ?.toSet() ?: NotificationType.values().toSet()
+                ?.toSet() ?: NotificationType.entries.toSet()
 
             // Проверка категории
             if (!enabledCategories.contains(type)) return false

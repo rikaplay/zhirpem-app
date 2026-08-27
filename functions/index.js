@@ -4,9 +4,9 @@ const axios = require("axios");
 
 admin.initializeApp();
 
-// ПОЖАЛУЙСТА, УБЕДИТЕСЬ ЧТО REST API KEY ВЕРНЫЙ (обычно он длиннее)
+// Используйте firebase functions:secrets:set для реальной безопасности
 const ONESIGNAL_APP_ID = "e52144a6-d4ea-46a4-870f-4089ec7a6af9";
-const ONESIGNAL_REST_API_KEY = "gycpqrjz7el4eil7itrf3xlin";
+const ONESIGNAL_REST_API_KEY = "os_v2_app_4uqujjwu5jdkjbypice6y6tk7hgycpqrjz7el4eil7itrf3xlinih6ikgpfq6o5l43izejzh4wdmjtrszqsdjvzj455p7mvulqousny";
 
 exports.onNewPostCreatedOneSignal = onDocumentCreated("zhirpem_posts/{postId}", async (event) => {
     const postData = event.data.data();

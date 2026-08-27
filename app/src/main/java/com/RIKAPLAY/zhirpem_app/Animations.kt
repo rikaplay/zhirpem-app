@@ -34,13 +34,15 @@ val premiumBoundsSpring = spring<IntOffset>(
 )
 
 fun Modifier.bounceClick(onClick: () -> Unit = {}): Modifier = this.composed {
+    val animationsEnabled = LocalAnimationsEnabled.current
+    if (!animationsEnabled) return@composed this.clickable(onClick = onClick)
+
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val animationsEnabled = LocalAnimationsEnabled.current
     
     // Анимируем масштаб: при нажатии уменьшаем до 92%, при отпускании возвращаем 100%
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && animationsEnabled) 0.92f else 1f,
+        targetValue = if (isPressed) 0.92f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
             stiffness = Spring.StiffnessHigh // Высокая скорость отклика

@@ -6,13 +6,20 @@ import android.media.MediaPlayer
 object SoundManager {
     private var mediaPlayer: MediaPlayer? = null
 
-    fun playSplashSound(context: Context) {
+    fun playSplashSound(context: Context, isPremium: Boolean = false) {
         // Если уже играет, не запускаем заново или сбрасываем
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
+        try {
+            mediaPlayer?.let {
+                if (it.isPlaying) it.stop()
+                it.release()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         
         try {
-            mediaPlayer = MediaPlayer.create(context, R.raw.splash_sound)
+            val soundRes = if (isPremium) R.raw.splash_sound_premium else R.raw.splash_sound
+            mediaPlayer = MediaPlayer.create(context, soundRes)
             mediaPlayer?.setOnCompletionListener {
                 release()
             }
@@ -23,8 +30,14 @@ object SoundManager {
     }
 
     fun release() {
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
+        try {
+            mediaPlayer?.let {
+                if (it.isPlaying) it.stop()
+                it.release()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         mediaPlayer = null
     }
 }

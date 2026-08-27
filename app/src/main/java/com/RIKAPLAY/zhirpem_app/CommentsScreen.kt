@@ -112,7 +112,7 @@ fun CommentItemRow(
             .padding(start = if (isReply) 24.dp else 0.dp)
             .padding(vertical = 8.dp)
             .combinedClickable(
-                onClick = { /* Клик */ },
+                onClick = { onReply(comment) },
                 onLongClick = { onReply(comment) }
             ),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

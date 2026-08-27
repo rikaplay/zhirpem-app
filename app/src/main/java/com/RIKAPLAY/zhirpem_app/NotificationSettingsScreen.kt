@@ -6,11 +6,13 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,7 +24,9 @@ fun NotificationSettingsScreen(
     viewModel: NotificationSettingsViewModel,
     onBack: () -> Unit
 ) {
-    val settings by viewModel.settings.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    val settingsState = viewModel.settings.collectAsState()
+    val settings = settingsState.value
 
     Scaffold(
         topBar = {
@@ -30,7 +34,7 @@ fun NotificationSettingsScreen(
                 title = { Text("Настройки уведомлений") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 }
             )
@@ -54,7 +58,10 @@ fun NotificationSettingsScreen(
                     Text("Вибрация", fontSize = 16.sp)
                     Switch(
                         checked = settings.isVibrationEnabled,
-                        onCheckedChange = { viewModel.updateVibration(it) }
+                        onCheckedChange = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.updateVibration(it) 
+                        }
                     )
                 }
             }
@@ -100,7 +107,10 @@ fun NotificationSettingsScreen(
                                 .height(48.dp)
                                 .selectable(
                                     selected = (settings.senderFilter == filter),
-                                    onClick = { viewModel.updateSenderFilter(filter) },
+                                    onClick = { 
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.updateSenderFilter(filter) 
+                                    },
                                     role = Role.RadioButton
                                 ),
                             verticalAlignment = Alignment.CenterVertically
@@ -139,6 +149,7 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
 
 @Composable
 fun CategoryItem(label: String, checked: Boolean, onToggle: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -147,6 +158,12 @@ fun CategoryItem(label: String, checked: Boolean, onToggle: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, fontSize = 16.sp)
-        Checkbox(checked = checked, onCheckedChange = { onToggle() })
+        Checkbox(
+            checked = checked, 
+            onCheckedChange = { 
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onToggle() 
+            }
+        )
     }
 }

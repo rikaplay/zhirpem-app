@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import android.app.Activity
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -54,9 +55,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.messaging.FirebaseMessaging
 import com.onesignal.OneSignal
+import com.RIKAPLAY.zhirpem_app.BuildConfig
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.delay
@@ -85,30 +88,70 @@ import android.os.VibratorManager
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import androidx.biometric.BiometricPrompt
+import androidx.fragment.app.FragmentActivity
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import com.RIKAPLAY.zhirpem_app.ui.theme.Zhirpem_appTheme
+import com.RIKAPLAY.zhirpem_app.webrtc.GlobalCallViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.RIKAPLAY.zhirpem_app.webrtc.CallScreen
+import com.RIKAPLAY.zhirpem_app.webrtc.IncomingCallOverlay
+import com.RIKAPLAY.zhirpem_app.webrtc.CallPipOverlay
+import com.RIKAPLAY.zhirpem_app.webrtc.CallService
 
-// ==========================================
-// 1. ГЛАВНАЯ АКТИВНОСТЬ
-// ==========================================
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Удаление почты у пользователя @misuvava
+        FirebaseFirestore.getInstance().collection("users").document("misuvava")
+            .update("email", com.google.firebase.firestore.FieldValue.delete())
+
         setContent {
             val context = LocalContext.current
             val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
             val settingsManager = remember { SettingsManager(context) }
             
-            // Состояние: включены ли стандартные анимации (инвертируем значение режима экономии)
+            // Состояния, которые должны реагировать на изменения в SharedPreferences (например, от EnergySaver)
             val animationsEnabled = remember { mutableStateOf(!settingsManager.isLowPerformanceMode) }
             val fontSizeMultiplier = remember { mutableStateOf(settingsManager.fontSizeMultiplier) }
             val isGlassEnabled = remember { mutableStateOf(settingsManager.isGlassEnabled) }
             val glassAlpha = remember { mutableStateOf(settingsManager.glassAlpha) }
 
+            // Слушатель изменений настроек
+            DisposableEffect(context) {
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+                    when (key) {
+                        "low_perf_mode" -> animationsEnabled.value = !prefs.getBoolean(key, false)
+                        "font_size_multiplier" -> fontSizeMultiplier.value = prefs.getFloat(key, 1.0f)
+                        "glass_enabled" -> isGlassEnabled.value = prefs.getBoolean(key, true)
+                        "glass_alpha" -> glassAlpha.value = prefs.getFloat(key, 0.4f)
+                    }
+                }
+                val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                prefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose {
+                    prefs.unregisterOnSharedPreferenceChangeListener(listener)
+                }
+            }
+
             // Загружаем сохраненную тему (по умолчанию системная)
             var savedTheme by remember {
                 mutableStateOf(AppThemeMode.valueOf(sharedPrefs.getString("app_theme", "SYSTEM") ?: "SYSTEM"))
+            }
+
+            // Слушатель изменений сессии (для темы)
+            DisposableEffect(context) {
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+                    if (key == "app_theme") {
+                        savedTheme = AppThemeMode.valueOf(prefs.getString(key, "SYSTEM") ?: "SYSTEM")
+                    }
+                }
+                sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose {
+                    sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+                }
             }
 
             CompositionLocalProvider(
@@ -192,6 +235,38 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    fun showBiometricPrompt(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    onError(errString.toString())
+                }
+
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onSuccess()
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    onError("Не удалось распознать биометрию")
+                }
+            })
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Вход в Zhirpem")
+            .setSubtitle("Используйте биометрию для входа")
+            .setNegativeButtonText("Использовать пароль")
+            .build()
+
+        biometricPrompt.authenticate(promptInfo)
+    }
 }
 
 // ==========================================
@@ -211,12 +286,18 @@ fun AppNavigation(
 
     // Состояния авторизации и профиля
     var isLoggedIn by remember { mutableStateOf(sharedPrefs.getBoolean("is_logged_in", false)) }
+    var isAppLocked by remember {
+        mutableStateOf(sharedPrefs.getBoolean("use_biometric", false) && sharedPrefs.getBoolean("is_logged_in", false)) 
+    }
+    var showPasswordUnlockDialog by remember { mutableStateOf(false) }
+
     var currentProfileUser by remember { mutableStateOf<String?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isBookmarksOpen by remember { mutableStateOf(false) }
     var isCommunitiesOpen by remember { mutableStateOf(false) }
     var isStatisticsOpen by remember { mutableStateOf(false) }
     var isOptimizationOpen by remember { mutableStateOf(false) }
+    var isEnergySaverOpen by remember { mutableStateOf(false) }
     var isSecuritySettingsOpen by remember { mutableStateOf(false) }
     var isNewsOpen by remember { mutableStateOf(false) }
     var showBackupWarning by remember { mutableStateOf(false) }
@@ -225,9 +306,30 @@ fun AppNavigation(
     var globalSearchQuery by remember { mutableStateOf<String?>(null) }
     var isCheckingSession by remember { mutableStateOf(true) }
     var showSplash by remember { mutableStateOf(true) }
+    var is2faEnabled by remember { mutableStateOf(true) } // По умолчанию считаем что включена, чтобы не мигало
 
     val settingsManager = remember { SettingsManager(context) }
     val myUsername = sharedPrefs.getString("username", "anonymous") ?: "anonymous"
+
+    val globalCallViewModel: GlobalCallViewModel = viewModel()
+    
+    LaunchedEffect(myUsername) {
+        if (myUsername != "anonymous") {
+            globalCallViewModel.init(myUsername)
+        }
+    }
+
+    val isCallActive by globalCallViewModel.isCallActive.collectAsState()
+    val showIncomingOverlay by globalCallViewModel.showIncomingOverlay.collectAsState()
+    val peerName by globalCallViewModel.peerName.collectAsState()
+    val peerAvatarUrl by globalCallViewModel.peerAvatarUrl.collectAsState()
+    val currentChatId by globalCallViewModel.currentChatId.collectAsState()
+    val callDuration by globalCallViewModel.callDuration.collectAsState()
+    val isMinimized by globalCallViewModel.isMinimized.collectAsState()
+    val ping by globalCallViewModel.ping.collectAsState()
+    val callEndReason by globalCallViewModel.callEndReason.collectAsState()
+    val isRemoteSpeaking by globalCallViewModel.isRemoteSpeaking.collectAsState()
+    val isLocalSpeaking by globalCallViewModel.isLocalSpeaking.collectAsState()
 
     // Запрос разрешения на уведомления для Android 13+
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -256,6 +358,12 @@ fun AppNavigation(
                     if (snapshot.exists()) {
                         val hasBackupCode = snapshot.contains("backupCode")
                         showBackupWarning = !hasBackupCode && !sharedPrefs.getBoolean("backup_warning_dismissed", false)
+                        is2faEnabled = snapshot.getBoolean("is2faEnabled") ?: false
+
+                        // Сохраняем статус галочки
+                        sharedPrefs.edit()
+                            .putBoolean("blueBadge", snapshot.getBoolean("blueBadge") ?: false)
+                            .apply()
                     }
                 }
         }
@@ -267,16 +375,68 @@ fun AppNavigation(
         isCheckingSession = false
     }
 
+    // Биометрическая проверка при входе
+    LaunchedEffect(isAppLocked) {
+        if (isAppLocked && context is MainActivity) {
+            context.showBiometricPrompt(
+                onSuccess = { isAppLocked = false },
+                onError = { error ->
+                    if (error.contains("negative button", ignoreCase = true) || 
+                        error.contains("отмена", ignoreCase = true) || 
+                        error.contains("cancel", ignoreCase = true)) {
+                        showPasswordUnlockDialog = true
+                    }
+                }
+            )
+        }
+    }
+
     if (showSplash) {
         val settingsManager = remember { SettingsManager(context) }
         SplashScreen(
             isEnabled = settingsManager.isSplashScreenEnabled,
+            isPremium = sharedPrefs.getBoolean("blueBadge", false),
             onNavigateToMain = { showSplash = false }
         )
     } else if (isCheckingSession) {
         // Экран-заглушка при старте
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+    } else if (isAppLocked) {
+        // Экран блокировки
+        Box(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.Shield, 
+                    contentDescription = null, 
+                    modifier = Modifier.size(64.dp), 
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Приложение заблокировано", fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(onClick = { 
+                    if (context is MainActivity) {
+                        context.showBiometricPrompt(
+                            onSuccess = { isAppLocked = false },
+                            onError = { showPasswordUnlockDialog = true }
+                        )
+                    }
+                }) {
+                    Text("Разблокировать")
+                }
+            }
+        }
+
+        if (showPasswordUnlockDialog) {
+            PasswordUnlockDialog(
+                onSuccess = { isAppLocked = false },
+                onDismiss = { showPasswordUnlockDialog = false }
+            )
         }
     } else {
         val animationsEnabledGlobal = LocalAnimationsEnabled.current
@@ -297,6 +457,7 @@ fun AppNavigation(
                 // Определяем текущее состояние экрана для анимации переходов
                     val navigationState = when {
                         isSettingsOpen -> "settings" to null
+                        isEnergySaverOpen -> "energy_saver" to null
                         isOptimizationOpen -> "optimization" to null
                         isBookmarksOpen -> "bookmarks" to null
                         isNewsOpen -> "news" to null
@@ -341,6 +502,10 @@ fun AppNavigation(
                                     isOptimizationOpen = true
                                     isSettingsOpen = false
                                 },
+                                onNavigateToEnergySaver = {
+                                    isEnergySaverOpen = true
+                                    isSettingsOpen = false
+                                },
                                 currentTheme = currentTheme,
                                 onThemeChange = onThemeChange,
                                 onPerformanceModeChanged = onPerformanceModeChanged,
@@ -381,12 +546,34 @@ fun AppNavigation(
                             StatisticsScreenContainer(onBack = { isStatisticsOpen = false })
                         }
                         "security_settings" -> {
-                            BackHandler { isSecuritySettingsOpen = false }
-                            SecuritySettingsScreen(onBack = { isSecuritySettingsOpen = false })
+                            BackHandler { 
+                                isSecuritySettingsOpen = false
+                                isSettingsOpen = true
+                            }
+                            SecuritySettingsScreen(onBack = { 
+                                isSecuritySettingsOpen = false
+                                isSettingsOpen = true
+                            })
                         }
                         "optimization" -> {
-                            BackHandler { isOptimizationOpen = false }
-                            OptimizationScreen(onBack = { isOptimizationOpen = false })
+                            BackHandler { 
+                                isOptimizationOpen = false
+                                isSettingsOpen = true
+                            }
+                            OptimizationScreen(onBack = { 
+                                isOptimizationOpen = false
+                                isSettingsOpen = true
+                            })
+                        }
+                        "energy_saver" -> {
+                            BackHandler { 
+                                isEnergySaverOpen = false
+                                isSettingsOpen = true
+                            }
+                            EnergySaverScreen(onBack = { 
+                                isEnergySaverOpen = false
+                                isSettingsOpen = true
+                            })
                         }
                         "news" -> {
                             BackHandler { isNewsOpen = false }
@@ -404,6 +591,9 @@ fun AppNavigation(
                                 onHashtagClick = {
                                     globalSearchQuery = it
                                     currentProfileUser = null
+                                },
+                                onNavigateToProfile = { newUser ->
+                                    currentProfileUser = newUser
                                 }
                             )
                         }
@@ -430,6 +620,14 @@ fun AppNavigation(
                                 onNavigateToSecurity = {
                                     isSecuritySettingsOpen = true
                                     showBackupWarning = false
+                                },
+                                is2faEnabled = is2faEnabled,
+                                isCallActive = isCallActive,
+                                callDuration = callDuration,
+                                onCallClick = {
+                                    currentChatId?.let { 
+                                        globalChatId = it 
+                                    }
                                 }
                             )
                             // Сбрасываем запрос после того как MainScreen его подхватил
@@ -438,6 +636,84 @@ fun AppNavigation(
                                     delay(100)
                                     globalSearchQuery = null
                                 }
+                            }
+                        }
+                    }
+                }
+
+                if (isCallActive || callEndReason != null) {
+                    val callUIState = when {
+                        showIncomingOverlay -> "incoming"
+                        isMinimized && callEndReason == null -> "pip"
+                        else -> "full"
+                    }
+
+                    AnimatedContent(
+                        targetState = callUIState,
+                        transitionSpec = {
+                            if (animationsEnabled) {
+                                (scaleIn(initialScale = 0.9f) + fadeIn(animationSpec = tween(400))) togetherWith 
+                                (scaleOut(targetScale = 1.1f) + fadeOut(animationSpec = tween(400)))
+                            } else {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            }
+                        },
+                        label = "CallUITransition",
+                        modifier = Modifier.fillMaxSize().zIndex(100f)
+                    ) { state ->
+                        when (state) {
+                            "incoming" -> {
+                                IncomingCallOverlay(
+                                    peerName = peerName,
+                                    peerAvatarUrl = peerAvatarUrl,
+                                    onAccept = {
+                                        CallService.start(context)
+                                        globalCallViewModel.acceptCall()
+                                    },
+                                    onReject = {
+                                        globalCallViewModel.rejectCall()
+                                    }
+                                )
+                            }
+                            "pip" -> {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+                                    CallPipOverlay(
+                                        remoteVideoTrack = globalCallViewModel.remoteVideoTrack.collectAsState().value,
+                                        onInitRemote = { globalCallViewModel.initRemoteSurface(it) },
+                                        onClick = { globalCallViewModel.toggleMinimize() }
+                                    )
+                                }
+                            }
+                            "full" -> {
+                                val connectionState by globalCallViewModel.connectionState.collectAsState()
+                                val isSpeakerphoneEnabled by globalCallViewModel.isSpeakerphoneEnabled.collectAsState()
+                                val isFrontCamera by globalCallViewModel.isFrontCamera.collectAsState()
+                                CallScreen(
+                                    localVideoTrack = globalCallViewModel.localVideoTrack.collectAsState().value,
+                                    remoteVideoTrack = globalCallViewModel.remoteVideoTrack.collectAsState().value,
+                                    peerName = peerName,
+                                    peerAvatarUrl = peerAvatarUrl,
+                                    isAudioEnabled = globalCallViewModel.isAudioEnabled.collectAsState().value,
+                                    isVideoEnabled = globalCallViewModel.isVideoEnabled.collectAsState().value,
+                                    isRemoteSpeaking = isRemoteSpeaking,
+                                    isLocalSpeaking = isLocalSpeaking,
+                                    isFrontCamera = isFrontCamera,
+                                    isSpeakerphoneEnabled = isSpeakerphoneEnabled,
+                                    connectionState = connectionState.name,
+                                    ping = ping,
+                                    endReason = callEndReason,
+                                    onInitLocal = { globalCallViewModel.initLocalSurface(it) },
+                                    onInitRemote = { globalCallViewModel.initRemoteSurface(it) },
+                                    onToggleAudio = { globalCallViewModel.toggleAudio() },
+                                    onToggleVideo = { globalCallViewModel.toggleVideo() },
+                                    onFlipCamera = { globalCallViewModel.flipCamera() },
+                                    onToggleSpeaker = { globalCallViewModel.toggleSpeakerphone() },
+                                    onHangup = {
+                                        globalCallViewModel.hangup()
+                                        CallService.stop(context)
+                                    },
+                                    onMinimize = { globalCallViewModel.toggleMinimize() }
+                                )
                             }
                         }
                     }
@@ -464,10 +740,40 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
 
     var errorMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var showForgotPasswordDialog by remember { mutableStateOf(false) }
 
-    if (showForgotPasswordDialog) {
-        ForgotPasswordDialog(onDismiss = { showForgotPasswordDialog = false })
+    var show2faDialog by remember { mutableStateOf(false) }
+    var userTotpSecret by remember { mutableStateOf("") }
+    var pendingUsername by remember { mutableStateOf("") }
+    var pendingName by remember { mutableStateOf("") }
+    var pendingBlueBadge by remember { mutableStateOf(false) }
+
+    if (showForgotPasswordTotpDialog) {
+        ForgotPasswordTotpDialog(onDismiss = { showForgotPasswordTotpDialog = false })
+    }
+
+    if (showForgotPasswordDialogGlobal) {
+        ForgotPasswordDialog(onDismiss = { showForgotPasswordDialogGlobal = false })
+    }
+
+    if (show2faDialog) {
+        TwoFactorAuthDialog(
+            username = pendingUsername,
+            onSuccess = {
+                OneSignal.User.addAlias("external_id", pendingUsername)
+                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                    OneSignal.Notifications.requestPermission(true)
+                }
+                sharedPrefs.edit()
+                    .putBoolean("is_logged_in", true)
+                    .putString("username", pendingUsername)
+                    .putString("name", pendingName)
+                    .putBoolean("blueBadge", pendingBlueBadge)
+                    .apply()
+                onAuthSuccess()
+            },
+            onDismiss = { show2faDialog = false },
+            secret = userTotpSecret
+        )
     }
 
     fun processAuth() {
@@ -487,19 +793,31 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
                 .addOnSuccessListener { doc ->
                     isLoading = false
                     if (doc.exists() && doc.getString("password") == password) {
-                        val loggedUsername = cleanUsername
-                        OneSignal.User.addAlias("external_id", loggedUsername)
-                        // Запрос разрешения в фоне
-                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                            OneSignal.Notifications.requestPermission(true)
-                        }
+                        val is2faEnabled = doc.getBoolean("is2faEnabled") ?: false
+                        val totpSecret = doc.getString("totpSecret") ?: ""
 
-                        sharedPrefs.edit()
-                            .putBoolean("is_logged_in", true)
-                            .putString("username", cleanUsername)
-                            .putString("name", doc.getString("name"))
-                            .apply()
-                        onAuthSuccess()
+                        if (is2faEnabled && totpSecret.isNotEmpty()) {
+                            userTotpSecret = totpSecret
+                            pendingUsername = cleanUsername
+                            pendingName = doc.getString("name") ?: ""
+                            pendingBlueBadge = doc.getBoolean("blueBadge") ?: false
+                            show2faDialog = true
+                        } else {
+                            val loggedUsername = cleanUsername
+                            OneSignal.User.addAlias("external_id", loggedUsername)
+                            // Запрос разрешения в фоне
+                            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                OneSignal.Notifications.requestPermission(true)
+                            }
+
+                            sharedPrefs.edit()
+                                .putBoolean("is_logged_in", true)
+                                .putString("username", cleanUsername)
+                                .putString("name", doc.getString("name"))
+                                .putBoolean("blueBadge", doc.getBoolean("blueBadge") ?: false)
+                                .apply()
+                            onAuthSuccess()
+                        }
                     } else {
                         errorMessage = "Неверный юзернейм или пароль!"
                     }
@@ -622,12 +940,159 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
                 Text(text = if (isLoginTab) "Создать новый аккаунт" else "Уже есть профиль? Войти")
             }
             if (isLoginTab) {
-                TextButton(onClick = { showForgotPasswordDialog = true }) {
-                    Text("Забыли пароль?")
+                var showResetOptions by remember { mutableStateOf(false) }
+                
+                Box {
+                    TextButton(onClick = { showResetOptions = true }) {
+                        Text("Забыли пароль?")
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showResetOptions,
+                        onDismissRequest = { showResetOptions = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Сброс через Backup Code") },
+                            onClick = {
+                                showResetOptions = false
+                                showForgotPasswordDialogGlobal = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Сброс через TOTP (2FA)") },
+                            onClick = {
+                                showResetOptions = false
+                                // Открываем диалог сброса через TOTP
+                                showForgotPasswordTotpDialog = true
+                            }
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+var showForgotPasswordTotpDialog by mutableStateOf(false)
+var showForgotPasswordDialogGlobal by mutableStateOf(false)
+
+@Composable
+fun ForgotPasswordTotpDialog(onDismiss: () -> Unit) {
+    val db = FirebaseFirestore.getInstance()
+    var step by remember { mutableIntStateOf(1) }
+    var username by remember { mutableStateOf("") }
+    var totpCode by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var userSecret by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (step == 1) "Сброс через TOTP" else "Новый пароль") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (step == 1) {
+                    TextField(
+                        value = username,
+                        onValueChange = { username = it.trim().lowercase().replace("@", "") },
+                        label = { Text("Юзернейм") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextField(
+                        value = totpCode,
+                        onValueChange = { if (it.length <= 6) totpCode = it },
+                        label = { Text("Код из аутентификатора") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    )
+                } else {
+                    TextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("Новый пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text("Подтвердите пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (errorMessage.isNotEmpty()) {
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (step == 1) {
+                        if (username.isEmpty() || totpCode.isEmpty()) {
+                            errorMessage = "Заполните все поля"
+                            return@Button
+                        }
+                        isLoading = true
+                        db.collection("users").document(username).get()
+                            .addOnSuccessListener { doc ->
+                                isLoading = false
+                                if (doc.exists()) {
+                                    val secret = doc.getString("totpSecret") ?: ""
+                                    if (secret.isNotEmpty() && TotpUtils.verifyTotp(secret, totpCode)) {
+                                        userSecret = secret
+                                        step = 2
+                                        errorMessage = ""
+                                    } else {
+                                        errorMessage = "Неверный код или 2FA не настроена"
+                                    }
+                                } else {
+                                    errorMessage = "Пользователь не найден"
+                                }
+                            }
+                            .addOnFailureListener {
+                                isLoading = false
+                                errorMessage = "Ошибка сети"
+                            }
+                    } else {
+                        if (newPassword.isEmpty() || confirmPassword.isEmpty()) {
+                            errorMessage = "Заполните поля"
+                            return@Button
+                        }
+                        if (newPassword != confirmPassword) {
+                            errorMessage = "Пароли не совпадают"
+                            return@Button
+                        }
+                        isLoading = true
+                        db.collection("users").document(username).update("password", newPassword)
+                            .addOnSuccessListener {
+                                isLoading = false
+                                onDismiss()
+                            }
+                            .addOnFailureListener {
+                                isLoading = false
+                                errorMessage = "Ошибка при обновлении"
+                            }
+                    }
+                },
+                enabled = !isLoading
+            ) {
+                Text(if (step == 1) "Проверить" else "Сохранить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isLoading) {
+                Text("Отмена")
+            }
+        }
+    )
 }
 
 @Composable
@@ -695,11 +1160,18 @@ fun ForgotPasswordDialog(onDismiss: () -> Unit) {
                         db.collection("users").document(username).get()
                             .addOnSuccessListener { doc ->
                                 isLoading = false
-                                if (doc.exists() && doc.getString("backupCode") == backupCode) {
-                                    step = 2
-                                    errorMessage = ""
+                                if (doc.exists()) {
+                                    val dbCode = doc.getString("backupCode")
+                                    if (dbCode == null) {
+                                        errorMessage = "Backup Code не настроен для этого аккаунта"
+                                    } else if (dbCode == backupCode) {
+                                        step = 2
+                                        errorMessage = ""
+                                    } else {
+                                        errorMessage = "Неверный Backup Code"
+                                    }
                                 } else {
-                                    errorMessage = "Неверные данные"
+                                    errorMessage = "Пользователь не найден"
                                 }
                             }
                             .addOnFailureListener {
@@ -740,6 +1212,172 @@ fun ForgotPasswordDialog(onDismiss: () -> Unit) {
     )
 }
 
+@Composable
+fun TwoFactorAuthDialog(
+    username: String,
+    onSuccess: () -> Unit,
+    onDismiss: () -> Unit,
+    secret: String
+) {
+    var code by remember { mutableStateOf("") }
+    var backupCodeInput by remember { mutableStateOf("") }
+    var isBackupMode by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    var isLoadingBackup by remember { mutableStateOf(false) }
+    val db = FirebaseFirestore.getInstance()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isBackupMode) "Вход по коду восстановления" else "Двухфакторная проверка") },
+        text = {
+            Column {
+                if (!isBackupMode) {
+                    Text(
+                        "Введите 6-значный код из вашего приложения для аутентификации (например, Google Authenticator)",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { if (it.length <= 6) code = it },
+                        label = { Text("Код подтверждения") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    )
+                } else {
+                    Text(
+                        "Введите ваш 6-значный Backup Code, полученный при регистрации или в настройках безопасности.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = backupCodeInput,
+                        onValueChange = { if (it.length <= 6) backupCodeInput = it },
+                        label = { Text("Backup Code") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    )
+                }
+                
+                if (errorMessage.isNotEmpty()) {
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(
+                    onClick = { 
+                        isBackupMode = !isBackupMode
+                        errorMessage = ""
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(if (isBackupMode) "Использовать TOTP код" else "Нет доступа к аутентификатору?")
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (!isBackupMode) {
+                        if (TotpUtils.verifyTotp(secret, code)) {
+                            onSuccess()
+                        } else {
+                            errorMessage = "Неверный код подтверждения"
+                        }
+                    } else {
+                        if (backupCodeInput.isEmpty()) return@Button
+                        isLoadingBackup = true
+                        db.collection("users").document(username).get()
+                            .addOnSuccessListener { doc ->
+                                isLoadingBackup = false
+                                if (doc.exists() && doc.getString("backupCode") == backupCodeInput) {
+                                    onSuccess()
+                                } else {
+                                    errorMessage = "Неверный Backup Code"
+                                }
+                            }
+                            .addOnFailureListener {
+                                isLoadingBackup = false
+                                errorMessage = "Ошибка сети"
+                            }
+                    }
+                },
+                enabled = if (isBackupMode) backupCodeInput.length == 6 && !isLoadingBackup else code.length == 6
+            ) {
+                if (isLoadingBackup) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Text("Подтвердить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+@Composable
+fun PasswordUnlockDialog(onSuccess: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
+    val myUsername = sharedPrefs.getString("username", "") ?: ""
+    val db = FirebaseFirestore.getInstance()
+    
+    var password by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Введите пароль от аккаунта") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Пароль") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                if (errorMessage.isNotEmpty()) {
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (password.isEmpty()) return@Button
+                    isLoading = true
+                    db.collection("users").document(myUsername).get()
+                        .addOnSuccessListener { doc ->
+                            isLoading = false
+                            if (doc.exists() && doc.getString("password") == password) {
+                                onSuccess()
+                            } else {
+                                errorMessage = "Неверный пароль"
+                            }
+                        }
+                        .addOnFailureListener {
+                            isLoading = false
+                            errorMessage = "Ошибка сети"
+                        }
+                },
+                enabled = !isLoading
+            ) {
+                if (isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                else Text("Войти")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
 // ==========================================
 // 5. ГЛАВНЫЙ ЭКРАН (ЛЕНТА + МЕНЮ)
 // ==========================================
@@ -758,7 +1396,11 @@ fun MainScreen(
     onLogout: () -> Unit,
     showBackupWarning: Boolean,
     onDismissBackupWarning: () -> Unit,
-    onNavigateToSecurity: () -> Unit
+    onNavigateToSecurity: () -> Unit,
+    is2faEnabled: Boolean = true,
+    isCallActive: Boolean = false,
+    callDuration: Long = 0,
+    onCallClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
@@ -1017,6 +1659,7 @@ fun MainScreen(
                             chatId = chatId!!, 
                             onBack = { activeChatId = null }, 
                             onNavigateToPost = { /* scrollToPost */ },
+                            onNavigateToProfile = { onNavigateToProfile(it) },
                             onOpenCamera = { isCameraOpen = true }
                         )
                         "notifications" -> NotificationsScreen()
@@ -1035,7 +1678,11 @@ fun MainScreen(
                                 currentName = currentName,
                                 showBackupWarning = showBackupWarning,
                                 onNavigateToSecurity = onNavigateToSecurity,
-                                onDismissBackupWarning = onDismissBackupWarning
+                                onDismissBackupWarning = onDismissBackupWarning,
+                                is2faEnabled = is2faEnabled,
+                                isCallActive = isCallActive,
+                                callDuration = callDuration,
+                                onCallClick = onCallClick
                             )
                         }
                     }
@@ -1152,6 +1799,22 @@ fun MainScreen(
     }
 }
 
+fun extractKeywords(text: String): List<String> {
+    val hashtagRegex = Regex("#([a-zA-Z0-9_а-яА-Я]+)")
+    val hashtags = hashtagRegex.findAll(text).map { it.groupValues[1].lowercase() }.toList()
+    
+    // Упрощенный список стоп-слов (можно расширить)
+    val stopWords = setOf("и", "в", "на", "что", "как", "это", "по", "для", "но", "а", "ты", "мы", "вы", "они", "с", "у", "к", "из")
+    
+    val words = text.lowercase()
+        .replace(Regex("[^a-zA-Z0-9а-яА-Я\\s]"), " ")
+        .split(Regex("\\s+"))
+        .filter { it.length > 3 && it !in stopWords }
+        .distinct()
+
+    return (hashtags + words).distinct().take(15) // Берем топ-15 ключевых слов
+}
+
 // ==========================================
 // 6. ОКНО СОЗДАНИЯ ПОСТА
 // ==========================================
@@ -1244,6 +1907,7 @@ fun ComposePostDialog(name: String, username: String, isMediaTabActive: Boolean,
                         onClick = {
                             if (postText.trim().isNotEmpty() || mediaUri != null) {
                                 isSending = true
+                                val tags = extractKeywords(postText.trim())
                                 val newPost = hashMapOf(
                                     "author" to name,
                                     "handle" to "@$username",
@@ -1260,7 +1924,8 @@ fun ComposePostDialog(name: String, username: String, isMediaTabActive: Boolean,
                                     "authorNameColor" to myNameColor, // Сохраняем цвет ника
                                     "isAuthorBanned" to myBannedStatus, // Сохраняем статус бана
                                     "authorStatus" to sharedPrefs.getString("status", ""), // Сохраняем статус
-                                    "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                                    "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+                                    "tags" to tags
                                 )
 
                                 if (showPollForm && pollData.question.isNotBlank() && pollData.options.isNotEmpty()) {
@@ -1275,8 +1940,8 @@ fun ComposePostDialog(name: String, username: String, isMediaTabActive: Boolean,
                                             
                                             // 1. Отправляем пуш через OneSignal REST API прямо из приложения
                                             sendOneSignalNotification(
-                                                appId = "e52144a6-d4ea-46a4-870f-4089ec7a6af9",
-                                                restKey = "os_v2_app_4uqujjwu5jdkjbypice6y6tk7hgycpqrjz7el4eil7itrf3xlinih6ikgpfq6o5l43izejzh4wdmjtrszqsdjvzj455p7mvulqousny",
+                                                appId = BuildConfig.ONESIGNAL_APP_ID,
+                                                restKey = BuildConfig.ONESIGNAL_REST_KEY,
                                                 authorName = name,
                                                 text = postText.trim(),
                                                 postId = postId
@@ -1321,8 +1986,8 @@ fun ComposePostDialog(name: String, username: String, isMediaTabActive: Boolean,
 
                                                     // 1. Отправляем пуш через OneSignal REST API прямо из приложения
                                                     sendOneSignalNotification(
-                                                        appId = "e52144a6-d4ea-46a4-870f-4089ec7a6af9",
-                                                        restKey = "os_v2_app_4uqujjwu5jdkjbypice6y6tk7hgycpqrjz7el4eil7itrf3xlinih6ikgpfq6o5l43izejzh4wdmjtrszqsdjvzj455p7mvulqousny",
+                                                        appId = BuildConfig.ONESIGNAL_APP_ID,
+                                                        restKey = BuildConfig.ONESIGNAL_REST_KEY,
                                                         authorName = name,
                                                         text = postText.trim(),
                                                         postId = postId
@@ -1516,13 +2181,13 @@ fun uploadImageToCloudinary(
 
         // 2. Отправляем запрос на Cloudinary
         val client = OkHttpClient()
-        
+
         val mimeType = when(mediaType) {
             MediaType.VIDEO -> "video/mp4"
             MediaType.GIF -> "image/gif"
             else -> "image/jpeg"
         }
-        
+
         val resourceType = if (mediaType == MediaType.VIDEO) "video" else "image"
 
         val requestBody = MultipartBody.Builder()
@@ -1653,8 +2318,8 @@ fun StatisticsScreenContainer(onBack: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        // 1. Fetch all posts to derive analytics
-        db.collection("zhirpem_posts").get().addOnSuccessListener { snapshot ->
+        // 1. Fetch posts to derive analytics (Limited for performance)
+        db.collection("zhirpem_posts").orderBy("timestamp", Query.Direction.DESCENDING).limit(50).get().addOnSuccessListener { snapshot ->
             val allPosts = snapshot.documents.mapNotNull { doc ->
                 val p = doc.toObject(Post::class.java)
                 p?.let {
@@ -1670,9 +2335,13 @@ fun StatisticsScreenContainer(onBack: () -> Unit) {
                 }
             }
             allPostsAnalytics = allPosts
-            
+
             // Refine myPosts
-            db.collection("zhirpem_posts").whereEqualTo("handle", "@$myUsername").get().addOnSuccessListener { mySnap ->
+            db.collection("zhirpem_posts")
+                .whereEqualTo("handle", "@$myUsername")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(30)
+                .get().addOnSuccessListener { mySnap ->
                 myPostsAnalytics = mySnap.documents.mapNotNull { doc ->
                     val p = doc.toObject(Post::class.java)
                     p?.let {
@@ -1689,15 +2358,17 @@ fun StatisticsScreenContainer(onBack: () -> Unit) {
                 }
                 isLoading = false
             }
+            .addOnFailureListener { isLoading = false }
         }
+        .addOnFailureListener { isLoading = false }
 
-        // 2. Fetch communities
-        db.collection("communities").get().addOnSuccessListener { snapshot ->
+        // 2. Fetch communities (Limited)
+        db.collection("communities").limit(20).get().addOnSuccessListener { snapshot ->
             popularCommunities = snapshot.documents.mapNotNull { it.toObject(Community::class.java)?.copy(id = it.id) }
         }
 
-        // 3. Fetch comments
-        db.collection("comments").get().addOnSuccessListener { snapshot ->
+        // 3. Fetch comments (Limited)
+        db.collection("comments").orderBy("timestamp", Query.Direction.DESCENDING).limit(50).get().addOnSuccessListener { snapshot ->
             bestComments = snapshot.documents.mapNotNull { doc ->
                 val c = doc.toObject(Comment::class.java)
                 c?.let {
@@ -1743,9 +2414,23 @@ fun sendNotification(
 
     db.collection("users").document(receiverId).get().addOnSuccessListener { userDoc ->
         if (!userDoc.exists()) return@addOnSuccessListener
-        
+
+        val isOnlyVerified = userDoc.getBoolean("isOnlyVerifiedMessages") ?: false
         val setting = userDoc.getString("notificationSetting") ?: "all"
-        
+
+        fun checkBadgesAndSend() {
+            if (isOnlyVerified) {
+                db.collection("users").document(senderId).get().addOnSuccessListener { senderDoc ->
+                    val isVerified = senderDoc.getBoolean("blueBadge") == true || senderDoc.getBoolean("yellowBadge") == true
+                    if (isVerified) {
+                        performSendNotification(db, senderId, senderName, senderAvatar, receiverId, type, text, postId, targetText)
+                    }
+                }
+            } else {
+                performSendNotification(db, senderId, senderName, senderAvatar, receiverId, type, text, postId, targetText)
+            }
+        }
+
         when (setting) {
             "none" -> return@addOnSuccessListener
             "following" -> {
@@ -1762,13 +2447,13 @@ fun sendNotification(
                                 .get()
                                 .addOnSuccessListener { snapshot2 ->
                                     if (!snapshot2.isEmpty) {
-                                        performSendNotification(db, senderId, senderName, senderAvatar, receiverId, type, text, postId, targetText)
+                                        checkBadgesAndSend()
                                     }
                                 }
                         }
                     }
             }
-            else -> performSendNotification(db, senderId, senderName, senderAvatar, receiverId, type, text, postId, targetText)
+            else -> checkBadgesAndSend()
         }
     }
 }
@@ -1806,34 +2491,34 @@ fun sendOneSignalNotification(
     postId: String
 ) {
     val client = OkHttpClient()
-    
+
     val json = JSONObject()
     json.put("app_id", appId)
-    
+
     val segments = JSONArray()
     segments.put("Subscribed Users")
     json.put("included_segments", segments)
-    
+
     val headings = JSONObject()
     headings.put("en", "Новый пост от $authorName")
     headings.put("ru", "Новый пост от $authorName")
     json.put("headings", headings)
-    
+
     val contents = JSONObject()
     contents.put("en", text)
     contents.put("ru", text)
     json.put("contents", contents)
-    
+
     val data = JSONObject()
     data.put("postId", postId)
     data.put("type", "NEW_POST")
     json.put("data", data)
-    
+
     json.put("android_channel_id", "zhirpem_notifications")
 
     val mediaType = "application/json; charset=utf-8".toMediaType()
     val body = json.toString().toRequestBody(mediaType)
-    
+
     val request = Request.Builder()
         .url("https://onesignal.com/api/v1/notifications")
         .post(body)
@@ -1850,6 +2535,64 @@ fun sendOneSignalNotification(
                 android.util.Log.d("OneSignalREST", "Пуш успешно отправлен: $responseData")
             } else {
                 android.util.Log.e("OneSignalREST", "Ошибка API OneSignal ($response): $responseData")
+            }
+        }
+    })
+}
+
+fun sendOneSignalEmail(
+    appId: String,
+    restKey: String,
+    email: String,
+    code: String
+) {
+    val client = OkHttpClient()
+    
+    val json = JSONObject()
+    json.put("app_id", appId)
+    
+    val emailTo = JSONArray()
+    emailTo.put(email)
+    json.put("email_to", emailTo)
+    
+    // Помечаем как транзакционное, чтобы обходить проверку на подписку
+    json.put("include_unsubscribed", true)
+    
+    json.put("email_subject", "Ваш код подтверждения Zhirpem")
+    
+    // HTML body for better appearance
+    val emailBody = """
+        <div style="font-family: sans-serif; padding: 20px; text-align: center; background-color: #f4f4f4;">
+            <div style="background-color: #ffffff; padding: 30px; border-radius: 16px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+                <h2 style="color: #6200EE;">Подтверждение входа</h2>
+                <p style="font-size: 16px; color: #333;">Ваш одноразовый код для входа в Zhirpem:</p>
+                <div style="font-size: 32px; font-weight: bold; color: #6200EE; margin: 20px 0; letter-spacing: 5px;">$code</div>
+                <p style="font-size: 12px; color: #888;">Если вы не запрашивали этот код, просто проигнорируйте это письмо.</p>
+            </div>
+        </div>
+    """.trimIndent()
+    
+    json.put("email_body", emailBody)
+
+    val mediaType = "application/json; charset=utf-8".toMediaType()
+    val body = json.toString().toRequestBody(mediaType)
+    
+    val request = Request.Builder()
+        .url("https://onesignal.com/api/v1/notifications")
+        .post(body)
+        .addHeader("Authorization", "Basic $restKey")
+        .build()
+
+    client.newCall(request).enqueue(object : Callback {
+        override fun onFailure(call: Call, e: java.io.IOException) {
+            android.util.Log.e("OneSignalEmail", "Ошибка отправки email: ${e.message}")
+        }
+        override fun onResponse(call: Call, response: Response) {
+            val responseData = response.body?.string()
+            if (response.isSuccessful) {
+                android.util.Log.d("OneSignalEmail", "Email успешно отправлен: $responseData")
+            } else {
+                android.util.Log.e("OneSignalEmail", "Ошибка API OneSignal Email ($response): $responseData")
             }
         }
     })

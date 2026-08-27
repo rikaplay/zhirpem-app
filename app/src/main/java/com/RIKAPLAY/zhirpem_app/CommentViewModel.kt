@@ -54,6 +54,17 @@ class CommentViewModel : ViewModel() {
         val currentComment = _comments.value.find { it.id == commentId } ?: return
         val isAlreadyLiked = currentComment.likedBy.contains(currentUserId)
 
+        // Оптимистичное обновление
+        val updatedList = _comments.value.map {
+            if (it.id == commentId) {
+                it.copy(
+                    likesCount = if (isAlreadyLiked) (it.likesCount - 1).coerceAtLeast(0) else it.likesCount + 1,
+                    likedBy = if (isAlreadyLiked) it.likedBy - currentUserId else it.likedBy + currentUserId
+                )
+            } else it
+        }
+        _comments.value = updatedList
+
         if (isAlreadyLiked) {
             commentRef.update(
                 "likesCount", FieldValue.increment(-1),

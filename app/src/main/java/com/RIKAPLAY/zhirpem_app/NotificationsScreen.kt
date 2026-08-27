@@ -2,9 +2,11 @@
 
 package com.RIKAPLAY.zhirpem_app
 
+import android.content.res.Configuration
 import android.text.Html
 import android.widget.TextView
 import android.widget.Toast
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -43,28 +45,6 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 // ==========================================
-// 1. МОДЕЛЬ ДАННЫХ И ТИПЫ
-// ==========================================
-
-enum class NotificationType {
-    LIKE, COMMENT, FOLLOW, MESSAGE, ADMIN
-}
-
-data class NotificationModel(
-    val id: String = "",
-    val senderId: String = "",
-    val username: String = "",
-    val userAvatarUrl: String = "",
-    val type: NotificationType = NotificationType.LIKE,
-    val targetText: String = "", // Текст поста или коммента, который оценили
-    val userComment: String = "", // Сам комментарий, если это тип COMMENT или HTML тело для ADMIN
-    val timestamp: Timestamp? = null,
-    val receiverId: String = "",
-    val postId: String? = null,
-    val bigPictureUrl: String = ""
-)
-
-// ==========================================
 // 2. ГЛАВНЫЙ ЭКРАН УВЕДОМЛЕНИЙ
 // ==========================================
 
@@ -93,7 +73,12 @@ fun NotificationsScreen() {
                     if (snapshot != null) {
                         notificationsList = snapshot.documents.mapNotNull { doc ->
                             val typeStr = doc.getString("type") ?: "LIKE"
-                            val type = try { NotificationType.valueOf(typeStr) } catch (e: Exception) { NotificationType.LIKE }
+                            val type = try { 
+                                when(typeStr) {
+                                    "MESSAGE" -> NotificationType.CHAT_MESSAGE
+                                    else -> NotificationType.valueOf(typeStr)
+                                }
+                            } catch (e: Exception) { NotificationType.LIKE }
                             
                             NotificationModel(
                                 id = doc.id,
@@ -221,6 +206,8 @@ fun NotificationItem(
     notification: NotificationModel,
     onFollowClick: () -> Unit = {}
 ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -245,7 +232,7 @@ fun NotificationItem(
                 NotificationType.LIKE -> Icons.Default.Favorite to Color(0xFFEF5350) // Красный лайк
                 NotificationType.COMMENT -> Icons.Default.Comment to MaterialTheme.colorScheme.primary // Зеленый (Material You)
                 NotificationType.FOLLOW -> Icons.Default.PersonAdd to Color(0xFF4CAF50) // Зеленый плюс
-                NotificationType.MESSAGE -> Icons.Default.Email to Color(0xFF2196F3) // Синий конверт
+                NotificationType.CHAT_MESSAGE -> Icons.Default.Email to Color(0xFF2196F3) // Синий конверт
                 NotificationType.ADMIN -> Icons.Default.Notifications to Color(0xFFFF9800) // Оранжевый колокольчик
             }
 
@@ -283,7 +270,7 @@ fun NotificationItem(
                     NotificationType.LIKE -> "оценил(а) вашу запись"
                     NotificationType.COMMENT -> "прокомментировал(а) вашу запись"
                     NotificationType.FOLLOW -> "подписался(-ась) на вас"
-                    NotificationType.MESSAGE -> "отправил(а) вам сообщение"
+                    NotificationType.CHAT_MESSAGE -> "отправил(а) вам сообщение"
                     NotificationType.ADMIN -> "" // Для админа заголовок в targetText
                 }
                 withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f), fontSize = 14.sp)) {
@@ -326,6 +313,7 @@ fun NotificationItem(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(200.dp)
+                            .adaptiveImageSize(isLandscape)
                             .clip(RoundedCornerShape(8.dp)),
                         contentScale = ContentScale.Crop
                     )

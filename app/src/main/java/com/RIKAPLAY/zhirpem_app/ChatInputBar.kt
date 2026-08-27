@@ -20,6 +20,10 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import android.content.Context
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,6 +48,11 @@ fun ChatInputBar(
     onTyping: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
+    val isVibrationEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("vibration_enabled", true) }
+
     var textState by remember { mutableStateOf("") }
     var inputMode by remember { mutableStateOf(ChatInputMode.AUDIO) }
     var isRecording by remember { mutableStateOf(false) }
@@ -114,6 +123,7 @@ fun ChatInputBar(
                 if (textState.trim().isNotEmpty()) {
                     IconButton(
                         onClick = {
+                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onSendText(textState)
                             textState = ""
                         }
@@ -149,6 +159,7 @@ fun ChatInputBar(
                                                     delay(300)
                                                     isLongClick = true
                                                     isRecording = true
+                                                    if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     if (inputMode == ChatInputMode.AUDIO) {
                                                         onStartAudioRecord()
                                                     } else {
@@ -184,6 +195,7 @@ fun ChatInputBar(
                                 detectDragGesturesAfterLongPress(
                                     onDrag = { _, dragAmount ->
                                         if (isRecording && dragAmount.y < -15f) {
+                                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             isLocked = true
                                             isRecording = false
                                         }

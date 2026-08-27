@@ -25,7 +25,11 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import android.content.Context
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -34,17 +38,26 @@ fun LiquidLens(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val animationsEnabled = LocalAnimationsEnabled.current
+    val glassEnabled = LocalGlassEnabled.current
+
     Box(
         modifier = modifier
             .clip(CircleShape)
-            .graphicsLayer {
-                // Эффект размытия того, что под линзой (Android 12+)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    renderEffect = android.graphics.RenderEffect.createBlurEffect(
-                        25f, 25f, android.graphics.Shader.TileMode.DECAL
-                    ).asComposeRenderEffect()
+            .then(
+                if (animationsEnabled && glassEnabled) {
+                    Modifier.graphicsLayer {
+                        // Эффект размытия того, что под линзой (Android 12+)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            renderEffect = android.graphics.RenderEffect.createBlurEffect(
+                                25f, 25f, android.graphics.Shader.TileMode.DECAL
+                            ).asComposeRenderEffect()
+                        }
+                    }
+                } else {
+                    Modifier
                 }
-            }
+            )
             .drawWithContent {
                 // Рисуем содержимое
                 drawContent()
@@ -78,6 +91,11 @@ fun FluidSwipeBottomBar(
     selectedLabel: String,
     onTabSelected: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
+    val isVibrationEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("vibration_enabled", true) }
+
     var barWidth by remember { mutableFloatStateOf(0f) }
     var dragX by remember { mutableFloatStateOf(-1f) }
     var isPressing by remember { mutableStateOf(false) }
@@ -108,6 +126,15 @@ fun FluidSwipeBottomBar(
         (dragX / segmentWidthPx).toInt().coerceIn(0, items.size - 1)
     } else {
         selectedIndex
+    }
+
+    // Вибрация при смене активного индекса во время перетаскивания
+    var lastVibratedIndex by remember { mutableIntStateOf(selectedIndex) }
+    LaunchedEffect(activeIndex, isPressing) {
+        if (isPressing && activeIndex != lastVibratedIndex) {
+            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            lastVibratedIndex = activeIndex
+        }
     }
 
     // Анимация смещения и размера пузыря

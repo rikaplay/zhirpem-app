@@ -1,17 +1,10 @@
 package com.RIKAPLAY.zhirpem_app
 
-import android.content.res.Configuration
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.InfiniteTransition
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.material.icons.filled.Call
+import java.util.Locale
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,11 +13,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -61,7 +54,11 @@ fun MainFeedScreen(
     currentName: String,
     showBackupWarning: Boolean,
     onNavigateToSecurity: () -> Unit,
-    onDismissBackupWarning: () -> Unit
+    onDismissBackupWarning: () -> Unit,
+    is2faEnabled: Boolean,
+    isCallActive: Boolean = false,
+    callDuration: Long = 0,
+    onCallClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE) }
@@ -82,15 +79,25 @@ fun MainFeedScreen(
             }
     }
 
-    val isNewsUnread = topNewsVersion.isNotEmpty() && topNewsVersion != lastReadVersion
+    val isNewsUnread = (topNewsVersion.isNotEmpty()) && (topNewsVersion != lastReadVersion)
 
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // Проверка 2FA уведомления
+    var showTotpWarning by remember { mutableStateOf(false) }
+    val lastRemindedTotp = remember { sharedPrefs.getLong("last_reminded_totp", 0L) }
+    
+    LaunchedEffect(is2faEnabled, lastRemindedTotp) {
+        val oneWeekMillis = 7 * 24 * 60 * 60 * 1000L
+        val currentTime = System.currentTimeMillis()
+        showTotpWarning = !is2faEnabled && (currentTime - lastRemindedTotp > oneWeekMillis)
+    }
+
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     val viewModel: FeedViewModel = viewModel()
     val postsList by viewModel.postsList.collectAsState()
+    val recommendedPosts by viewModel.recommendedPosts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     
     val tabs = listOf("Для вас", "Вы читаете", "Популярное", "Медиа")
@@ -99,34 +106,49 @@ fun MainFeedScreen(
 
     val listState = rememberLazyListState()
 
-    LaunchedEffect(selectedTab) {
-        listState.animateScrollToItem(0)
-    }
-
     val coroutineScope = rememberCoroutineScope()
 
     var followingList by remember { mutableStateOf(setOf<String>()) }
     val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-    // val sharedPrefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
     val myUsername = sharedPrefs.getString("username", "") ?: ""
+
+    LaunchedEffect(selectedTab) {
+        listState.animateScrollToItem(0)
+        if (selectedTab == "Для вас" && recommendedPosts.isEmpty() && myUsername.isNotEmpty()) {
+            viewModel.fetchForYouPosts(myUsername, isRefresh = true)
+        }
+    }
 
     LaunchedEffect(myUsername) {
         if (myUsername.isNotEmpty()) {
+            viewModel.fetchForYouPosts(myUsername, isRefresh = true)
             db.collection("follows")
-                .whereEqualTo("follower", myUsername)
+                .whereEqualTo("follower", myUsername.lowercase())
                 .addSnapshotListener { snapshot, _ ->
-                    if (snapshot != null) {
-                        followingList = snapshot.documents.mapNotNull { it.getString("following") }.toSet()
+                    snapshot?.let {
+                        followingList = it.documents.asSequence().mapNotNull { doc -> doc.getString("following") }.toSet()
                     }
                 }
         }
     }
 
-    val filteredPosts = when (selectedTab) {
-        "Медиа" -> postsList.filter { (it.isMedia || !it.imageUrl.isNullOrEmpty()) && !it.isAuthorBanned && it.communityId == null }
-        "Вы читаете" -> postsList.filter { followingList.contains(it.handle.replace("@", "")) && !it.isAuthorBanned && it.communityId == null }
-        "Популярное" -> postsList.filter { !it.isAuthorBanned && it.communityId == null }.sortedByDescending { it.likes }
-        else -> postsList.filter { !it.isAuthorBanned && it.communityId == null }
+    val filteredPosts by remember(selectedTab, postsList, recommendedPosts, followingList) {
+        derivedStateOf {
+            val uniquePosts = postsList.distinctBy { it.id }
+            when (selectedTab) {
+                "Для вас" -> recommendedPosts.filter { !it.isAuthorBanned && it.communityId == null }
+                "Медиа" -> uniquePosts.filter { ((it.isMedia || !it.imageUrl.isNullOrEmpty()) && !it.isAuthorBanned && it.communityId == null) }
+                "Вы читаете" -> {
+                    val followingSet = followingList.map { it.lowercase() }.toSet()
+                    uniquePosts.asSequence().filter { 
+                        val handle = it.handle.replace("@", "").lowercase()
+                        followingSet.contains(handle) && !it.isAuthorBanned && it.communityId == null 
+                    }.toList()
+                }
+                "Популярное" -> uniquePosts.asSequence().filter { !it.isAuthorBanned && it.communityId == null }.sortedByDescending { it.likes }.toList()
+                else -> uniquePosts.filter { !it.isAuthorBanned && it.communityId == null }
+            }
+        }
     }
 
     Scaffold(
@@ -143,7 +165,7 @@ fun MainFeedScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surface)
                             .clickable { onMenuClick() },
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         if (!currentAvatarUrl.isNullOrEmpty()) {
                             AsyncImage(
@@ -161,17 +183,21 @@ fun MainFeedScreen(
                     Box(
                         modifier = Modifier
                             .padding(end = 12.dp)
-                            .size(40.dp),
-                        contentAlignment = Alignment.Center
+                            .height(40.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        JumpingUpdateIcon(
-                            onClick = onShowWhatsNew,
-                            isJumping = isNewsUnread
-                        )
+                        if (isCallActive) {
+                            AnimatedCallIcon(onClick = onCallClick, duration = callDuration)
+                        } else {
+                            JumpingUpdateIcon(
+                                onClick = onShowWhatsNew,
+                                isJumping = isNewsUnread
+                            )
+                        }
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.background
                 )
@@ -186,6 +212,16 @@ fun MainFeedScreen(
                 )
             }
 
+            if (showTotpWarning) {
+                TotpVulnerabilityBanner(
+                    onNavigateToSecurity = onNavigateToSecurity,
+                    onRemindLater = {
+                        sharedPrefs.edit().putLong("last_reminded_totp", System.currentTimeMillis()).apply()
+                        showTotpWarning = false
+                    }
+                )
+            }
+
             // Tabs
             val animationsEnabled = LocalAnimationsEnabled.current
             val glassEnabled = LocalGlassEnabled.current
@@ -194,10 +230,10 @@ fun MainFeedScreen(
             val density = LocalDensity.current
             var barWidth by remember { mutableFloatStateOf(0f) }
             var dragX by remember { mutableFloatStateOf(-1f) }
-            var isPressing by remember { mutableStateOf(false) }
+            var isPressing by remember { mutableStateOf(value = false) }
 
             // Вычисляем активный сегмент
-            val segmentWidthPx = if (tabs.isNotEmpty() && barWidth > 0) barWidth / tabs.size else 0f
+            val segmentWidthPx = if (barWidth > 0) barWidth / tabs.size else 0f
             val activeIndex = if (dragX != -1f && segmentWidthPx > 0) {
                 (dragX / segmentWidthPx).toInt().coerceIn(0, tabs.size - 1)
             } else {
@@ -230,13 +266,13 @@ fun MainFeedScreen(
                 label = "tabIndicatorHeight"
             )
 
-            val animatedAlpha by androidx.compose.animation.core.animateFloatAsState(
+            val animatedAlpha by animateFloatAsState(
                 targetValue = if (glassEnabled) glassAlpha else 0f,
                 animationSpec = if (animationsEnabled) androidx.compose.animation.core.tween(400) else androidx.compose.animation.core.snap(),
                 label = "glassAlpha"
             )
 
-            val blurRadius by androidx.compose.animation.core.animateFloatAsState(
+            val blurRadius by animateFloatAsState(
                 targetValue = if (glassEnabled) 25f else 0f,
                 animationSpec = if (animationsEnabled) androidx.compose.animation.core.tween(400) else androidx.compose.animation.core.snap(),
                 label = "blurRadius"
@@ -350,7 +386,7 @@ fun MainFeedScreen(
                                     }
                                 }
                                 .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 text = tab,
@@ -367,7 +403,7 @@ fun MainFeedScreen(
 
             // List
             Box(modifier = Modifier.fillMaxSize()) {
-                if (isLoading) {
+                if ((isRefreshing || isLoading) && postsList.isEmpty()) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(vertical = 16.dp),
@@ -381,29 +417,239 @@ fun MainFeedScreen(
                     }
                 } else if (errorMessage != null) {
                     Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.align(Alignment.Center).padding(16.dp))
-                } else if (filteredPosts.isEmpty()) {
-                    Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📭", fontSize = 48.sp)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Здесь пока пусто.", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-                    }
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 100.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        items(filteredPosts, key = { post -> post.id }) { post ->
-                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                PostItem(post = post, onUserClick = onUserClick, onHashtagClick = onHashtagClick)
+                    PullToRefreshBox(
+                        isRefreshing = isRefreshing,
+                        onRefresh = {
+                            if (selectedTab == "Для вас") {
+                                viewModel.fetchForYouPosts(myUsername, isRefresh = true)
+                            } else {
+                                viewModel.fetchPosts(isRefresh = true)
                             }
-                        }
-                        item {
-                            Spacer(modifier = Modifier.height(80.dp))
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 100.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            if (filteredPosts.isEmpty() && !isLoading && !isRefreshing) {
+                                item {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillParentMaxSize()
+                                            .padding(bottom = 100.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text("📭", fontSize = 48.sp)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(
+                                            text = if (selectedTab == "Вы читаете") "Здесь пока нет постов от тех, на кого вы подписаны." else "Здесь пока пусто.",
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 32.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            items(filteredPosts, key = { post -> post.id }) { post ->
+                                AnimatedPostWrapper {
+                                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                        PostItem(post = post, onUserClick = onUserClick, onHashtagClick = onHashtagClick)
+                                    }
+                                }
+                            }
+
+                            // Триггер загрузки новых постов при прокрутке до конца
+                            item {
+                                LaunchedEffect(Unit) {
+                                    if (!isLoading) {
+                                        if (selectedTab == "Для вас") {
+                                            viewModel.fetchForYouPosts(myUsername)
+                                        } else {
+                                            viewModel.fetchPosts()
+                                        }
+                                    }
+                                }
+                                
+                                if (isLoading) {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                    }
+                                }
+                            }
+
+                            item {
+                                Spacer(modifier = Modifier.height(80.dp))
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedPostWrapper(
+    content: @Composable () -> Unit
+) {
+    val animationsEnabled = LocalAnimationsEnabled.current
+    if (!animationsEnabled) {
+        content()
+        return
+    }
+
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        visible = true
+    }
+
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 600, easing = EaseOutExpo),
+        label = "postAlpha"
+    )
+    
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.9f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessLow),
+        label = "postScale"
+    )
+
+    val translateY by animateFloatAsState(
+        targetValue = if (visible) 0f else 40f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessLow),
+        label = "postTranslateY"
+    )
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                this.alpha = alpha
+                this.scaleX = scale
+                this.scaleY = scale
+                this.translationY = translateY
+            }
+    ) {
+        content()
+    }
+}
+
+@Composable
+fun TotpVulnerabilityBanner(
+    onNavigateToSecurity: () -> Unit,
+    onRemindLater: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF8B0000)), // Темно-красный
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "⚠️ Ваш аккаунт может быть уязвим",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Text(
+                "Включите двухфакторную аутентификацию (TOTP) для максимальной защиты.",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Row(
+                modifier = Modifier.padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onNavigateToSecurity,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("В настройки", color = Color(0xFF8B0000), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = onRemindLater,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    border = BorderStroke(1.dp, Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Напомнить через неделю", fontSize = 10.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedCallIcon(onClick: () -> Unit, duration: Long) {
+    var showPhoneIcon by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            showPhoneIcon = true
+            kotlinx.coroutines.delay(1000)
+            showPhoneIcon = false
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+
+    val backgroundColor by animateColorAsState(
+        targetValue = if (showPhoneIcon) Color(0xFF4CAF50) else Color(0xFF1B5E20),
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "bgColor"
+    )
+
+    Box(
+        modifier = Modifier
+            .height(32.dp)
+            .widthIn(min = 50.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(backgroundColor)
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.animation.AnimatedContent(
+            targetState = showPhoneIcon,
+            transitionSpec = {
+                (fadeIn() + scaleIn()).togetherWith(fadeOut() + scaleOut())
+            },
+            label = "iconTransition"
+        ) { isPhone ->
+            if (isPhone) {
+                Icon(
+                    imageVector = Icons.Default.Call,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else {
+                val minutes = duration / 60
+                val seconds = duration % 60
+                Text(
+                    text = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds),
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

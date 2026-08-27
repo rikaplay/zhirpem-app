@@ -2,11 +2,25 @@ package com.RIKAPLAY.zhirpem_app
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.MultiFormatWriter
+import com.google.zxing.common.BitMatrix
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
 
 object TotpUtils {
+
+    fun generateQrCodeBitmap(content: String, size: Int = 500): Bitmap {
+        val bitMatrix: BitMatrix = MultiFormatWriter().encode(content, BarcodeFormat.QR_CODE, size, size)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
+        for (x in 0 until size) {
+            for (y in 0 until size) {
+                bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) Color.BLACK else Color.WHITE)
+            }
+        }
+        return bitmap
+    }
 
     fun generateSecretKey(): String {
         val charPool = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"

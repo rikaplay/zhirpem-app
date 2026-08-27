@@ -1,8 +1,13 @@
 package com.RIKAPLAY.zhirpem_app
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -12,14 +17,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.animation.*
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +39,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     onNavigateToSecuritySettings: () -> Unit,
     onNavigateToOptimization: () -> Unit,
+    onNavigateToEnergySaver: () -> Unit,
     currentTheme: AppThemeMode,
     onThemeChange: (AppThemeMode) -> Unit,
     onPerformanceModeChanged: (Boolean) -> Unit,
@@ -36,6 +48,7 @@ fun SettingsScreen(
     onGlassAlphaChanged: (Float) -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val db = FirebaseFirestore.getInstance()
     val sharedPrefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
     val settingsManager = remember { SettingsManager(context) }
@@ -87,9 +100,31 @@ fun SettingsScreen(
 
     var showThemeDialog by remember { mutableStateOf(false) }
     var showUsernameDialog by remember { mutableStateOf(false) }
+    var showNameDialog by remember { mutableStateOf(false) }
     var newUsername by remember { mutableStateOf(myUsername) }
+    var newDisplayName by remember { mutableStateOf(name) }
     var usernameError by remember { mutableStateOf<String?>(null) }
     var showIconDialog by remember { mutableStateOf(false) }
+    
+    // --- НОВЫЕ СОСТОЯНИЯ ---
+    var showChatCallSettings by remember { mutableStateOf(false) }
+    var isOnlyVerifiedMessages by remember { mutableStateOf(false) }
+    var selectedRingtone by remember {
+        mutableIntStateOf(sharedPrefs.getInt("outgoing_call_ringtone", 0))
+    }
+    var showRingtoneDialog by remember { mutableStateOf(false) }
+    var showGlobalChatConfigDialog by remember { mutableStateOf(false) }
+    
+    // --- ПРИВАТНОСТЬ ---
+    var privacyLastSeen by remember { mutableStateOf("all") }
+    var privacyPhoto by remember { mutableStateOf("all") }
+    var hideFollows by remember { mutableStateOf(false) }
+    var readReceipts by remember { mutableStateOf(sharedPrefs.getBoolean("read_receipts", true)) }
+    var useBiometric by remember { mutableStateOf(sharedPrefs.getBoolean("use_biometric", false)) }
+    var showLastSeenDialog by remember { mutableStateOf(false) }
+    var showPhotoPrivacyDialog by remember { mutableStateOf(false) }
+    var showSupportDialog by remember { mutableStateOf(false) }
+    var showFAQDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(myUsername) {
         if (myUsername.isNotEmpty()) {
@@ -97,6 +132,13 @@ fun SettingsScreen(
                 name = doc.getString("name") ?: ""
                 notificationSetting = doc.getString("notificationSetting") ?: "all"
                 selectedNotificationIndex = notificationValues.indexOf(notificationSetting).coerceAtLeast(0)
+                isOnlyVerifiedMessages = doc.getBoolean("isOnlyVerifiedMessages") ?: false
+                
+                // Загрузка настроек приватности
+                privacyLastSeen = doc.getString("privacyLastSeen") ?: "all"
+                privacyPhoto = doc.getString("privacyPhoto") ?: "all"
+                hideFollows = doc.getBoolean("hideFollows") ?: false
+                
                 isLoading = false
             }
         }
@@ -130,449 +172,487 @@ fun SettingsScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // --- СЕКЦИЯ: ВНЕШНИЙ ВИД ---
-                Text("Внешний вид", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        SettingsClickableItem(
-                            title = "Тема оформления",
-                            subtitle = when(currentTheme) {
-                                AppThemeMode.LIGHT -> "Светлая (Зеленый акцент)"
-                                AppThemeMode.DARK -> "Темная (Зеленый акцент)"
-                                AppThemeMode.AMOLED -> "AMOLED (Черная)"
-                                AppThemeMode.SYSTEM -> "Системная"
-                                AppThemeMode.MATERIAL_YOU_LIGHT -> "Material You (Светлая)"
-                                AppThemeMode.MATERIAL_YOU_DARK -> "Material You (Темная)"
-                            },
-                            icon = Icons.Default.Palette,
-                            onClick = { showThemeDialog = true }
-                        )
-                        
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                        
-                        SettingsClickableItem(
-                            title = "Иконка приложения",
-                            subtitle = "Изменить значок на рабочем столе",
-                            icon = Icons.Default.Apps,
-                            onClick = { showIconDialog = true }
-                        )
+                // --- АККАУНТ И ПРОФИЛЬ ---
+                Text("Аккаунт", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                SettingsGroup {
+                    SettingsItem(
+                        title = "Имя",
+                        trailingText = name,
+                        icon = Icons.Default.Person,
+                        iconBackgroundColor = Color(0xFF007AFF), // Blue
+                        onClick = { 
+                            newDisplayName = name
+                            showNameDialog = true 
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "Юзернейм",
+                        trailingText = "@$myUsername",
+                        icon = Icons.Default.AlternateEmail,
+                        iconBackgroundColor = Color(0xFF32ADE6), // Cyan
+                        onClick = { 
+                            newUsername = myUsername
+                            usernameError = null
+                            showUsernameDialog = true 
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "Безопасность",
+                        subtitle = "Код восстановления доступа",
+                        icon = Icons.Default.Shield,
+                        iconBackgroundColor = Color(0xFF8E8E93), // Grey
+                        onClick = onNavigateToSecuritySettings
+                    )
+                }
 
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                // --- КОНФИДЕНЦИАЛЬНОСТЬ ---
+                Text("Конфиденциальность", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+                SettingsGroup {
+                    SettingsItem(
+                        title = "Последняя активность",
+                        subtitle = "Кто видит, когда вы были в сети",
+                        trailingText = when(privacyLastSeen) {
+                            "all" -> "Все"
+                            "friends" -> "Друзья"
+                            else -> "Никто"
+                        },
+                        icon = Icons.Default.Visibility,
+                        iconBackgroundColor = Color(0xFF34C759),
+                        onClick = { showLastSeenDialog = true }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "Фото профиля",
+                        trailingText = when(privacyPhoto) {
+                            "all" -> "Все"
+                            "friends" -> "Друзья"
+                            else -> "Никто"
+                        },
+                        icon = Icons.Default.AccountCircle,
+                        iconBackgroundColor = Color(0xFF007AFF),
+                        onClick = { showPhotoPrivacyDialog = true }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsSwitchItem(
+                        title = "Скрыть подписки",
+                        subtitle = "Не показывать список ваших читателей",
+                        icon = Icons.Default.People,
+                        iconBackgroundColor = Color(0xFF5856D6),
+                        checked = hideFollows,
+                        onCheckedChange = { 
+                            hideFollows = it
+                            db.collection("users").document(myUsername).update("hideFollows", it)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsSwitchItem(
+                        title = "Отчеты о прочтении",
+                        subtitle = "Видно ли, что вы прочитали сообщение",
+                        icon = Icons.Default.DoneAll,
+                        iconBackgroundColor = Color(0xFF5856D6),
+                        checked = readReceipts,
+                        onCheckedChange = { 
+                            readReceipts = it
+                            sharedPrefs.edit().putBoolean("read_receipts", it).apply()
+                            db.collection("users").document(myUsername).update("readReceipts", it)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsSwitchItem(
+                        title = "Защита приложения",
+                        subtitle = "Вход по отпечатку/FaceID",
+                        icon = Icons.Default.Fingerprint,
+                        iconBackgroundColor = Color.Black,
+                        checked = useBiometric,
+                        onCheckedChange = { 
+                            useBiometric = it
+                            sharedPrefs.edit().putBoolean("use_biometric", it).apply()
+                        }
+                    )
+                }
 
-                        // --- КАСТОМНАЯ ТЕМА ---
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Персонализация", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                    Text("Активировать свою цветовую схему", fontSize = 12.sp, color = Color.Gray)
-                                }
-                                Switch(
-                                    checked = customThemeType != ThemeManager.TYPE_DEFAULT,
-                                    onCheckedChange = { 
-                                        if (it) {
-                                            customThemeType = ThemeManager.TYPE_MY_DARK
-                                            themeManager.themeType = ThemeManager.TYPE_MY_DARK
-                                        } else {
-                                            customThemeType = ThemeManager.TYPE_DEFAULT
-                                            themeManager.themeType = ThemeManager.TYPE_DEFAULT
-                                        }
-                                    }
-                                )
-                            }
-                            
-                            if (customThemeType != ThemeManager.TYPE_DEFAULT) {
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                // Переключатель Светлая/Темная для кастомной темы
-                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                    SegmentedButton(
-                                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                        onClick = { 
-                                            customThemeType = ThemeManager.TYPE_MY_LIGHT
-                                            themeManager.themeType = ThemeManager.TYPE_MY_LIGHT
-                                        },
-                                        selected = customThemeType == ThemeManager.TYPE_MY_LIGHT
-                                    ) {
-                                        Text("Светлая")
-                                    }
-                                    SegmentedButton(
-                                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                        onClick = { 
-                                            customThemeType = ThemeManager.TYPE_MY_DARK
-                                            themeManager.themeType = ThemeManager.TYPE_MY_DARK
-                                        },
-                                        selected = customThemeType == ThemeManager.TYPE_MY_DARK
-                                    ) {
-                                        Text("Темная")
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    pastelPresets.forEach { (hex, name) ->
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .background(Color(android.graphics.Color.parseColor(hex)), RoundedCornerShape(18.dp))
-                                                .border(
-                                                    width = if (selectedColorHex == hex) 2.dp else 0.dp,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    shape = RoundedCornerShape(18.dp)
-                                                )
-                                                .clickable {
-                                                    selectedColorHex = hex
-                                                    themeManager.customColor = hex
-                                                }
-                                        )
-                                    }
-                                    
-                                    IconButton(
-                                        onClick = { showColorPickerDialog = true },
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(18.dp))
-                                    ) {
-                                        Icon(Icons.Default.ColorLens, contentDescription = "Палитра", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                    }
-                                }
+                // --- ВНЕШНИЙ ВИД ---
+                Text("Внешний вид", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                SettingsGroup {
+                    SettingsItem(
+                        title = "Тема оформления",
+                        trailingText = when(currentTheme) {
+                            AppThemeMode.LIGHT -> "Светлая"
+                            AppThemeMode.DARK -> "Темная"
+                            AppThemeMode.AMOLED -> "AMOLED"
+                            AppThemeMode.SYSTEM -> "Системная"
+                            AppThemeMode.MATERIAL_YOU_LIGHT -> "M. You Light"
+                            AppThemeMode.MATERIAL_YOU_DARK -> "M. You Dark"
+                        },
+                        icon = Icons.Default.Palette,
+                        iconBackgroundColor = Color(0xFFAF52DE), // Purple
+                        onClick = { showThemeDialog = true }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "Иконка приложения",
+                        icon = Icons.Default.Apps,
+                        iconBackgroundColor = Color(0xFF34C759), // Green
+                        onClick = { showIconDialog = true }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    
+                    // Персонализация
+                    SettingsSwitchItem(
+                        title = "Своя палитра",
+                        icon = Icons.Default.ColorLens,
+                        iconBackgroundColor = Color(0xFFFF9500), // Orange
+                        checked = customThemeType != ThemeManager.TYPE_DEFAULT,
+                        onCheckedChange = { 
+                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (it) {
+                                customThemeType = ThemeManager.TYPE_MY_DARK
+                                themeManager.themeType = ThemeManager.TYPE_MY_DARK
+                            } else {
+                                customThemeType = ThemeManager.TYPE_DEFAULT
+                                themeManager.themeType = ThemeManager.TYPE_DEFAULT
                             }
                         }
-
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Эффект стекла", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "Размытие панелей и матовое стекло", 
-                                    fontSize = 12.sp, 
-                                    color = Color.Gray
-                                )
-                            }
-                            Switch(
-                                checked = isGlassEnabled,
-                                onCheckedChange = { newValue ->
-                                    isGlassEnabled = newValue
-                                    onGlassModeChanged(newValue)
-                                }
-                            )
-                        }
-
-                        if (isGlassEnabled) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("Прозрачность стекла", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                        Text("Регулировка матовости панелей", fontSize = 12.sp, color = Color.Gray)
-                                    }
-                                    Text(
-                                        text = "${(glassAlpha * 100).toInt()}%",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                Slider(
-                                    value = glassAlpha,
-                                    onValueChange = { 
-                                        glassAlpha = it
-                                        onGlassAlphaChanged(it)
+                    )
+                    
+                    if (customThemeType != ThemeManager.TYPE_DEFAULT) {
+                        Column(modifier = Modifier.padding(start = 64.dp, end = 16.dp, bottom = 12.dp)) {
+                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                SegmentedButton(
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                    onClick = { 
+                                        customThemeType = ThemeManager.TYPE_MY_LIGHT
+                                        themeManager.themeType = ThemeManager.TYPE_MY_LIGHT
                                     },
-                                    valueRange = 0.1f..0.9f,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Облегченные анимации", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "Отключает сложные эффекты для плавности", 
-                                    fontSize = 12.sp, 
-                                    color = Color.Gray
-                                )
-                            }
-                            Switch(
-                                checked = isLowPerf,
-                                onCheckedChange = { newValue ->
-                                    isLowPerf = newValue
-                                    onPerformanceModeChanged(newValue)
-                                }
-                            )
-                        }
-
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Splash Screen", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "Показывать логотип при запуске", 
-                                    fontSize = 12.sp, 
-                                    color = Color.Gray
-                                )
-                            }
-                            Switch(
-                                checked = isSplashEnabled,
-                                onCheckedChange = { newValue ->
-                                    isSplashEnabled = newValue
-                                    settingsManager.isSplashScreenEnabled = newValue
-                                }
-                            )
-                        }
-
-                        val animationsEnabledGlobal = LocalAnimationsEnabled.current
-                        AnimatedVisibility(
-                            visible = isSplashEnabled,
-                            enter = if (animationsEnabledGlobal) expandVertically() + fadeIn() else EnterTransition.None,
-                            exit = if (animationsEnabledGlobal) shrinkVertically() + fadeOut() else ExitTransition.None
-                        ) {
-                            Column {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    selected = customThemeType == ThemeManager.TYPE_MY_LIGHT
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            "Звук сплеш-скрина",
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            "Воспроизводить звук при запуске",
-                                            fontSize = 12.sp,
-                                            color = Color.Gray
-                                        )
-                                    }
-                                    Switch(
-                                        checked = isSplashSoundEnabled,
-                                        onCheckedChange = { newValue ->
-                                            isSplashSoundEnabled = newValue
-                                            settingsManager.isSplashSoundEnabled = newValue
-                                        }
-                                    )
+                                    Text("Светлая", fontSize = 12.sp)
+                                }
+                                SegmentedButton(
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                    onClick = { 
+                                        customThemeType = ThemeManager.TYPE_MY_DARK
+                                        themeManager.themeType = ThemeManager.TYPE_MY_DARK
+                                    },
+                                    selected = customThemeType == ThemeManager.TYPE_MY_DARK
+                                ) {
+                                    Text("Темная", fontSize = 12.sp)
                                 }
                             }
-                        }
 
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                        // --- РАЗМЕР ШРИФТА ---
-                        Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Размер шрифта", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                    Text("Увеличение текста постов и сообщений", fontSize = 12.sp, color = Color.Gray)
-                                }
-                                Text(
-                                    text = "${(fontSizeMultiplier * 100).toInt()}%",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Slider(
-                                value = fontSizeMultiplier,
-                                onValueChange = { 
-                                    fontSizeMultiplier = it
-                                    onFontSizeChanged(it)
-                                },
-                                valueRange = 0.8f..1.5f,
-                                steps = 6,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-
-                // --- СЕКЦИЯ: АККАУНТ ---
-                Text("Аккаунт", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        SettingsClickableItem(
-                            title = "Юзернейм",
-                            subtitle = "@$myUsername",
-                            icon = Icons.Default.AlternateEmail,
-                            onClick = { 
-                                newUsername = myUsername
-                                usernameError = null
-                                showUsernameDialog = true 
-                            }
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                        SettingsClickableItem(
-                            title = "Безопасность",
-                            subtitle = "Код восстановления доступа",
-                            icon = Icons.Default.Shield,
-                            onClick = onNavigateToSecuritySettings
-                        )
-                    }
-                }
-
-                // --- СЕКЦИЯ: ПРОФИЛЬ ---
-                Text("Профиль", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            label = { Text("Имя") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-
-                        Button(
-                            onClick = {
-                                db.collection("users").document(myUsername).update("name", name)
-                                    .addOnSuccessListener {
-                                        sharedPrefs.edit().putString("name", name).apply()
-                                        android.widget.Toast.makeText(context, "Профиль обновлен!", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                            },
-                            modifier = Modifier.align(Alignment.End),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Сохранить")
-                        }
-                    }
-                }
-
-                // --- СЕКЦИЯ: УВЕДОМЛЕНИЯ И ЗВУКИ ---
-                Text("Система", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Вибрация", fontSize = 16.sp)
-                            Switch(
-                                checked = isVibrationEnabled, 
-                                onCheckedChange = { 
-                                    isVibrationEnabled = it
-                                    sharedPrefs.edit().putBoolean("vibration_enabled", it).apply()
-                                }
-                            )
-                        }
-                        
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-                        SettingsClickableItem(
-                            title = "Оптимизация",
-                            subtitle = "Управление кэшем и очистка",
-                            icon = Icons.Default.DeleteSweep,
-                            onClick = onNavigateToOptimization
-                        )
-
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Text("Уведомления:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
-                            notificationOptions.forEachIndexed { index, option ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { 
-                                            selectedNotificationIndex = index
-                                            val newVal = notificationValues[index]
-                                            db.collection("users").document(myUsername).update("notificationSetting", newVal)
-                                            sharedPrefs.edit().putInt("notification_mode", index).apply()
-                                        }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selectedNotificationIndex == index,
-                                        onClick = { 
-                                            selectedNotificationIndex = index 
-                                            val newVal = notificationValues[index]
-                                            db.collection("users").document(myUsername).update("notificationSetting", newVal)
-                                            sharedPrefs.edit().putInt("notification_mode", index).apply()
-                                        }
+                                pastelPresets.forEach { (hex, name) ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .background(Color(android.graphics.Color.parseColor(hex)), RoundedCornerShape(16.dp))
+                                            .border(
+                                                width = if (selectedColorHex == hex) 2.dp else 0.dp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = RoundedCornerShape(16.dp)
+                                            )
+                                            .clickable {
+                                                if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                selectedColorHex = hex
+                                                themeManager.customColor = hex
+                                            }
                                     )
-                                    Text(text = option, fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
+                                }
+                                
+                                IconButton(
+                                    onClick = { showColorPickerDialog = true },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+                                ) {
+                                    Icon(Icons.Default.ColorLens, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                 }
                             }
                         }
+                    }
 
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    
+                    SettingsSwitchItem(
+                        title = "Эффект стекла",
+                        icon = Icons.Default.BlurOn,
+                        iconBackgroundColor = Color(0xFF5AC8FA), // Light Blue
+                        checked = isGlassEnabled,
+                        onCheckedChange = { newValue ->
+                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isGlassEnabled = newValue
+                            onGlassModeChanged(newValue)
+                        }
+                    )
+                    
+                    if (isGlassEnabled) {
+                        Column(modifier = Modifier.padding(start = 64.dp, end = 16.dp, bottom = 12.dp)) {
+                            Slider(
+                                value = glassAlpha,
+                                onValueChange = { 
+                                    if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    glassAlpha = it
+                                    onGlassAlphaChanged(it)
+                                },
+                                valueRange = 0.1f..0.9f
+                            )
+                        }
+                    }
 
-                        ListItem(
-                            headlineContent = { Text("Проверить обновления", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-                            supportingContent = { Text("Поиск новой версии на GitHub", fontSize = 13.sp, color = Color.Gray) },
-                            leadingContent = {
-                                if (isCheckingUpdate) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    
+                    SettingsSwitchItem(
+                        title = "Низкая производительность",
+                        subtitle = "Упрощенные анимации",
+                        icon = Icons.Default.Speed,
+                        iconBackgroundColor = Color(0xFF5856D6), // Indigo
+                        checked = isLowPerf,
+                        onCheckedChange = { newValue ->
+                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isLowPerf = newValue
+                            onPerformanceModeChanged(newValue)
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF8E8E93)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.TextFormat, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text("Размер шрифта", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Text("${(fontSizeMultiplier * 100).toInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = fontSizeMultiplier,
+                            onValueChange = { 
+                                if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                fontSizeMultiplier = it
+                                onFontSizeChanged(it)
                             },
-                            trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray) },
-                            modifier = Modifier.clickable {
-                                if (!isCheckingUpdate) {
-                                    coroutineScope.launch {
-                                        isCheckingUpdate = true
-                                        val url = updater.checkForUpdates()
-                                        isCheckingUpdate = false
-                                        if (url != null) {
-                                            updateUrl = url
-                                            showUpdateDialog = true
-                                        } else {
-                                            updateMessage = "У вас установлена последняя версия"
-                                            android.widget.Toast.makeText(context, updateMessage, android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
+                            valueRange = 0.8f..1.5f,
+                            steps = 6
+                        )
+                    }
+                }
+
+                // --- ЗАПУСК ---
+                Text("Запуск", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                SettingsGroup {
+                    SettingsSwitchItem(
+                        title = "Splash Screen",
+                        subtitle = "Логотип при старте",
+                        icon = Icons.Default.RocketLaunch,
+                        iconBackgroundColor = Color(0xFFFF2D55), // Pink
+                        checked = isSplashEnabled,
+                        onCheckedChange = { newValue ->
+                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isSplashEnabled = newValue
+                            settingsManager.isSplashScreenEnabled = newValue
+                        }
+                    )
+                    
+                    if (isSplashEnabled) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                        SettingsSwitchItem(
+                            title = "Звук запуска",
+                            icon = Icons.Default.VolumeUp,
+                            iconBackgroundColor = Color(0xFFFFCC00), // Yellow
+                            checked = isSplashSoundEnabled,
+                            onCheckedChange = { newValue ->
+                                if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                isSplashSoundEnabled = newValue
+                                settingsManager.isSplashSoundEnabled = newValue
                             }
                         )
                     }
+                }
+
+                // --- ЧАТЫ И ЗВОНКИ ---
+                Text("Чаты и Звонки", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                SettingsGroup {
+                    SettingsItem(
+                        title = "Оформление чатов",
+                        subtitle = "Темы и обои для всех",
+                        icon = Icons.Default.ChatBubble,
+                        iconBackgroundColor = Color(0xFF5856D6), // Indigo
+                        onClick = { showGlobalChatConfigDialog = true }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsSwitchItem(
+                        title = "Только проверенные",
+                        subtitle = "Сообщения только от верифицированных",
+                        icon = Icons.Default.VerifiedUser,
+                        iconBackgroundColor = Color(0xFF34C759), // Green
+                        checked = isOnlyVerifiedMessages,
+                        onCheckedChange = { newValue ->
+                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isOnlyVerifiedMessages = newValue
+                            db.collection("users").document(myUsername).update("isOnlyVerifiedMessages", newValue)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "Мелодия вызова",
+                        trailingText = if (selectedRingtone == 0) "Tune 1" else "Tune 2",
+                        icon = Icons.Default.MusicNote,
+                        iconBackgroundColor = Color(0xFFFF9500), // Orange
+                        onClick = { showRingtoneDialog = true }
+                    )
+                }
+
+                // --- СИСТЕМА ---
+                Text("Система", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                SettingsGroup {
+                    SettingsItem(
+                        title = "Уведомления",
+                        trailingText = when(selectedNotificationIndex) {
+                            0 -> "Все"
+                            1 -> "Читаемые"
+                            else -> "Никто"
+                        },
+                        icon = Icons.Default.Notifications,
+                        iconBackgroundColor = Color(0xFFFF3B30), // Red
+                        onClick = { 
+                            // Можно открыть диалог или оставить логику ниже
+                        }
+                    )
+                    
+                    // Раскрывающийся список уведомлений
+                    Column(modifier = Modifier.padding(start = 64.dp, end = 16.dp, bottom = 8.dp)) {
+                        notificationOptions.forEachIndexed { index, option ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { 
+                                        if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        selectedNotificationIndex = index
+                                        val newVal = notificationValues[index]
+                                        db.collection("users").document(myUsername).update("notificationSetting", newVal)
+                                        sharedPrefs.edit().putInt("notification_mode", index).apply()
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedNotificationIndex == index,
+                                    onClick = { 
+                                        selectedNotificationIndex = index 
+                                        val newVal = notificationValues[index]
+                                        db.collection("users").document(myUsername).update("notificationSetting", newVal)
+                                        sharedPrefs.edit().putInt("notification_mode", index).apply()
+                                    }
+                                )
+                                Text(text = option, fontSize = 14.sp)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    
+                    SettingsSwitchItem(
+                        title = "Вибрация",
+                        icon = Icons.Default.Vibration,
+                        iconBackgroundColor = Color(0xFF34C759), // Green
+                        checked = isVibrationEnabled,
+                        onCheckedChange = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isVibrationEnabled = it
+                            sharedPrefs.edit().putBoolean("vibration_enabled", it).apply()
+                        }
+                    )
+                    
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+
+                    SettingsItem(
+                        title = "Оптимизация",
+                        subtitle = "Очистка кэша",
+                        icon = Icons.Default.DeleteSweep,
+                        iconBackgroundColor = Color(0xFF5AC8FA), // Blue
+                        onClick = onNavigateToOptimization
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+
+                    SettingsItem(
+                        title = "Энергосбережение",
+                        icon = Icons.Default.BatteryChargingFull,
+                        iconBackgroundColor = Color(0xFF4CD964), // Bright Green
+                        onClick = onNavigateToEnergySaver
+                    )
+                }
+
+                // --- ПОДДЕРЖКА И О ПРИЛОЖЕНИИ ---
+                Text("Поддержка и О приложении", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+                SettingsGroup {
+                    SettingsItem(
+                        title = "Написать в поддержку",
+                        subtitle = "Связь с разработчиками",
+                        icon = Icons.Default.SupportAgent,
+                        iconBackgroundColor = Color(0xFF007AFF),
+                        onClick = { showSupportDialog = true }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "FAQ / База знаний",
+                        subtitle = "Ответы на вопросы",
+                        icon = Icons.Default.Info,
+                        iconBackgroundColor = Color(0xFF5856D6),
+                        onClick = { showFAQDialog = true }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "Обновления",
+                        subtitle = if (isCheckingUpdate) "Поиск..." else "Проверить версию",
+                        icon = Icons.Default.SystemUpdate,
+                        iconBackgroundColor = Color(0xFF007AFF),
+                        onClick = {
+                            if (!isCheckingUpdate) {
+                                coroutineScope.launch {
+                                    isCheckingUpdate = true
+                                    val url = updater.checkForUpdates()
+                                    isCheckingUpdate = false
+                                    if (url != null) {
+                                        updateUrl = url
+                                        showUpdateDialog = true
+                                    } else {
+                                        android.widget.Toast.makeText(context, "У вас последняя версия", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    SettingsItem(
+                        title = "Пригласить друзей",
+                        subtitle = "Поделиться ссылкой на приложение",
+                        icon = Icons.Default.Share,
+                        iconBackgroundColor = Color(0xFF34C759),
+                        onClick = {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Приложение Zhirpem")
+                                putExtra(Intent.EXTRA_TEXT, "Привет! Скачай классное приложение Zhirpem по ссылке: https://github.com/rikaplay/zhirpem-app/releases/latest")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Поделиться"))
+                        }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -778,6 +858,47 @@ fun SettingsScreen(
         )
     }
 
+    // Диалог изменения имени
+    if (showNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showNameDialog = false },
+            title = { Text("Отображаемое имя") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newDisplayName,
+                        onValueChange = { newDisplayName = it },
+                        label = { Text("Ваше имя") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newDisplayName.isNotBlank()) {
+                            db.collection("users").document(myUsername).update("name", newDisplayName.trim())
+                                .addOnSuccessListener {
+                                    sharedPrefs.edit().putString("name", newDisplayName.trim()).apply()
+                                    name = newDisplayName.trim()
+                                    showNameDialog = false
+                                    android.widget.Toast.makeText(context, "Имя обновлено!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Сохранить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNameDialog = false }) { Text("Отмена") }
+            }
+        )
+    }
+
     // Диалог кастомного цвета
     if (showColorPickerDialog) {
         var customHex by remember { mutableStateOf(selectedColorHex) }
@@ -832,28 +953,553 @@ fun SettingsScreen(
             }
         )
     }
+
+    // --- ДИАЛОГ ВЫБОРА РИНГТОНА ---
+    if (showRingtoneDialog) {
+        var ringtonePlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+        
+        fun stopAndReleasePlayer() {
+            try {
+                ringtonePlayer?.let {
+                    if (it.isPlaying) {
+                        it.stop()
+                    }
+                    it.release()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                ringtonePlayer = null
+            }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                stopAndReleasePlayer()
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { 
+                stopAndReleasePlayer()
+                showRingtoneDialog = false 
+            },
+            title = { Text("Мелодия исходящего вызова") },
+            text = {
+                Column {
+                    val ringtones = listOf(
+                        "Zhirpem tune 1" to R.raw.zhirpem_tune_1,
+                        "Zhirpem tune 2" to R.raw.zhirpem_tune_2
+                    )
+                    ringtones.forEachIndexed { index, (name, resId) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { 
+                                    selectedRingtone = index
+                                    sharedPrefs.edit().putInt("outgoing_call_ringtone", index).apply()
+                                    
+                                    // Проигрываем превью
+                                    stopAndReleasePlayer()
+                                    try {
+                                        val player = android.media.MediaPlayer.create(context, resId)
+                                        ringtonePlayer = player
+                                        player?.start()
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = selectedRingtone == index, onClick = null)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { 
+                    stopAndReleasePlayer()
+                    showRingtoneDialog = false 
+                }) { Text("Готово") }
+            }
+        )
+    }
+
+    // --- ДИАЛОГ ОФОРМЛЕНИЯ ЧАТОВ ---
+    if (showGlobalChatConfigDialog) {
+        var isUpdatingChats by remember { mutableStateOf(false) }
+        val wallpaperLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri ->
+            uri?.let {
+                isUpdatingChats = true
+                uploadImageToCloudinary(
+                    context = context,
+                    imageUri = it,
+                    cloudName = "dcwp4nm3e",
+                    uploadPreset = "ProfilePIC",
+                    onSuccess = { url ->
+                        // Обновляем все чаты пользователя
+                        db.collection("chats")
+                            .whereArrayContains("participants", myUsername)
+                            .get()
+                            .addOnSuccessListener { snap ->
+                                val batch = db.batch()
+                                for (doc in snap) {
+                                    batch.update(doc.reference, "wallpaperUrl", url)
+                                }
+                                batch.commit().addOnSuccessListener {
+                                    isUpdatingChats = false
+                                    android.widget.Toast.makeText(context, "Обои применены ко всем чатам!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                    },
+                    onError = { isUpdatingChats = false }
+                )
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { if (!isUpdatingChats) showGlobalChatConfigDialog = false },
+            title = { Text("Оформление всех чатов") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Выберите действие, которое применится ко всем вашим перепискам:")
+                    
+                    Button(
+                        onClick = { wallpaperLauncher.launch("image/*") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isUpdatingChats
+                    ) {
+                        Text("Установить общие обои")
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                    Text("Выберите общую тему:", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val themes = listOf("DEFAULT", "BLUE", "GREEN", "PURPLE", "ORANGE")
+                        themes.forEach { themeName ->
+                            val color = when(themeName) {
+                                "BLUE" -> Color(0xFF2196F3)
+                                "GREEN" -> Color(0xFF4CAF50)
+                                "PURPLE" -> Color(0xFF9C27B0)
+                                "ORANGE" -> Color(0xFFFF9800)
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .clickable {
+                                        isUpdatingChats = true
+                                        db.collection("chats")
+                                            .whereArrayContains("participants", myUsername)
+                                            .get()
+                                            .addOnSuccessListener { snap ->
+                                                val batch = db.batch()
+                                                for (doc in snap) {
+                                                    batch.update(doc.reference, "theme", themeName)
+                                                }
+                                                batch.commit().addOnSuccessListener {
+                                                    isUpdatingChats = false
+                                                    android.widget.Toast.makeText(context, "Тема обновлена для всех чатов!", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                    }
+                            )
+                        }
+                    }
+                    
+                    if (isUpdatingChats) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showGlobalChatConfigDialog = false }, enabled = !isUpdatingChats) { Text("Закрыть") }
+            }
+        )
+    }
+
+    // --- ДИАЛОГИ ПРИВАТНОСТИ ---
+    if (showLastSeenDialog) {
+        PrivacyOptionDialog(
+            title = "Кто видит время захода?",
+            currentValue = privacyLastSeen,
+            onDismiss = { showLastSeenDialog = false },
+            onSelect = { newValue ->
+                privacyLastSeen = newValue
+                db.collection("users").document(myUsername).update("privacyLastSeen", newValue)
+                showLastSeenDialog = false
+            }
+        )
+    }
+
+    if (showPhotoPrivacyDialog) {
+        PrivacyOptionDialog(
+            title = "Кто видит моё фото?",
+            currentValue = privacyPhoto,
+            onDismiss = { showPhotoPrivacyDialog = false },
+            onSelect = { newValue ->
+                privacyPhoto = newValue
+                db.collection("users").document(myUsername).update("privacyPhoto", newValue)
+                showPhotoPrivacyDialog = false
+            }
+        )
+    }
+
+    if (showSupportDialog) {
+        AlertDialog(
+            onDismissRequest = { showSupportDialog = false },
+            title = { Text("Связаться с нами") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Выберите удобный способ связи:")
+                    
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("mailto:zhirpem1@gmail.com")
+                                putExtra(Intent.EXTRA_SUBJECT, "Поддержка Zhirpem")
+                            }
+                            context.startActivity(intent)
+                            showSupportDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Основная почта (zhirpem1@...)")
+                    }
+
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("mailto:richikcat51@gmail.com")
+                                putExtra(Intent.EXTRA_SUBJECT, "Вопрос разработчику Zhirpem")
+                            }
+                            context.startActivity(intent)
+                            showSupportDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Почта разработчика (richikcat51@...)")
+                    }
+
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/zhirpem1"))
+                            context.startActivity(intent)
+                            showSupportDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24A1DE))
+                    ) {
+                        Text("Telegram Канал")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSupportDialog = false }) { Text("Отмена") }
+            }
+        )
+    }
+
+    if (showFAQDialog) {
+        AlertDialog(
+            onDismissRequest = { showFAQDialog = false },
+            title = { Text("FAQ — Вопросы и Ответы") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    FAQItem(
+                        question = "Как изменить аватар?",
+                        answer = "Перейдите в свой профиль и нажмите на область аватара. Выберите фото из галереи или сделайте новое."
+                    )
+                    FAQItem(
+                        question = "Забыл пароль, что делать?",
+                        answer = "На экране входа нажмите 'Забыли пароль?'. Вы сможете сбросить его с помощью 6-значного Backup Code, который был выдан при регистрации."
+                    )
+                    FAQItem(
+                        question = "Как получить галочку верификации?",
+                        answer = "Верификация выдается активным пользователям, авторам контента или по усмотрению администрации. Напишите в поддержку для деталей."
+                    )
+                    FAQItem(
+                        question = "Не приходят уведомления",
+                        answer = "Проверьте, включены ли уведомления в настройках приложения (раздел Система) и в настройках телефона для Zhirpem."
+                    )
+                    FAQItem(
+                        question = "Что такое Эффект стекла?",
+                        answer = "Это визуальный эффект размытия (Blur), который делает интерфейс более современным. Можно настроить прозрачность или выключить для экономии заряда."
+                    )
+                    FAQItem(
+                        question = "Как скрыть время последнего захода?",
+                        answer = "В настройках зайдите в раздел 'Конфиденциальность' -> 'Последняя активность' и выберите 'Никто'."
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        "Остались вопросы? Загляните в наш Telegram канал:",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/zhirpem1"))
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24A1DE))
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Перейти в Telegram")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showFAQDialog = false }) { Text("Закрыть") }
+            }
+        )
+    }
 }
 
 @Composable
-fun SettingsClickableItem(
+fun FAQItem(question: String, answer: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(text = "Q: $question", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 15.sp)
+        Text(text = "A: $answer", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+        HorizontalDivider(modifier = Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+    }
+}
+
+@Composable
+fun PrivacyOptionDialog(
     title: String,
-    subtitle: String,
+    currentValue: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                val options = listOf("all" to "Все", "friends" to "Мои друзья (взаимно)", "none" to "Никто")
+                options.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(value) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = currentValue == value, onClick = null)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(label)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
+@Composable
+fun SettingsGroup(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(content = content)
+    }
+}
+
+@Composable
+fun SettingsItem(
+    title: String,
+    subtitle: String? = null,
+    trailingText: String? = null,
     icon: ImageVector,
+    iconBackgroundColor: Color,
+    iconColor: Color = Color.White,
     onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(iconBackgroundColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+            if (trailingText != null) {
+                Text(
+                    text = trailingText,
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = Color.Gray.copy(alpha = 0.5f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsSwitchItem(
+    title: String,
+    subtitle: String? = null,
+    icon: ImageVector,
+    iconBackgroundColor: Color,
+    iconColor: Color = Color.White,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(iconBackgroundColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(18.dp)
+            )
+        }
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, fontSize = 13.sp, color = Color.Gray)
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Normal
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
         }
-        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            scale = 0.8f
+        )
     }
+}
+
+// Вспомогательное расширение для уменьшения свитча
+@Composable
+fun Switch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    scale: Float = 1f,
+    enabled: Boolean = true
+) {
+    androidx.compose.material3.Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier.graphicsLayer(scaleX = scale, scaleY = scale),
+        enabled = enabled
+    )
+}
+
+fun uploadImageToCloudinary(
+    context: android.content.Context,
+    imageUri: Uri,
+    cloudName: String,
+    uploadPreset: String,
+    onSuccess: (String) -> Unit,
+    onError: () -> Unit
+) {
+    try {
+        val inputStream = context.contentResolver.openInputStream(imageUri)
+        val file = java.io.File(context.cacheDir, "upload_temp_${System.currentTimeMillis()}.jpg")
+        inputStream.use { input ->
+            java.io.FileOutputStream(file).use { output -> input?.copyTo(output) }
+        }
+
+        val client = okhttp3.OkHttpClient()
+        val mediaType = "image/jpeg".toMediaType()
+        val requestBody = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart("file", file.name, file.asRequestBody(mediaType))
+            .addFormDataPart("upload_preset", uploadPreset)
+            .build()
+
+        val request = okhttp3.Request.Builder()
+            .url("https://api.cloudinary.com/v1_1/$cloudName/image/upload")
+            .post(requestBody)
+            .build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) { onError() }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful) {
+                    val json = org.json.JSONObject(response.body?.string() ?: "{}")
+                    onSuccess(json.getString("secure_url"))
+                } else { onError() }
+            }
+        })
+    } catch (e: Exception) { onError() }
 }

@@ -8,4 +8,9 @@
         <item name="colorPrimaryDark">#121212</item>
         <item name="colorAccent">#2196F3</item>
     </style>
+
+    <style name="RoundedShapeAppearance" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">24dp</item>
+    </style>
 </resources>

@@ -6,6 +6,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +36,7 @@ import com.cloudinary.android.callback.ErrorInfo
 import com.cloudinary.android.callback.UploadCallback
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.RIKAPLAY.zhirpem_app.BuildConfig
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -311,32 +314,58 @@ fun UserAdminItem(user: Map<String, Any>, db: FirebaseFirestore, onAction: () ->
 @Composable
 fun PostAdminItem(post: Map<String, Any>, db: FirebaseFirestore, onAction: () -> Unit) {
     val postId = post["id"] as String
+    val status = post["status"] as? String
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        border = if (status == "на рассмотрении") BorderStroke(2.dp, MaterialTheme.colorScheme.error) else null
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            if (status == "на рассмотрении") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Report, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("ЖАЛОБА: НА РАССМОТРЕНИИ", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
             Text("От: ${post["author"] ?: "Аноним"} (@${post["handle"] ?: "user"})", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
             Spacer(modifier = Modifier.height(4.dp))
             Text(post["text"] as? String ?: "Нет текста", maxLines = 3)
             
-            if (!post["imageUrl"].toString().isNullOrEmpty()) {
+            if (!post["imageUrl"].toString().isNullOrEmpty() && post["imageUrl"] != null) {
                 Text("📎 Содержит медиа", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
             
-            Button(
-                onClick = { 
-                    db.collection("zhirpem_posts").document(postId).delete()
-                        .addOnSuccessListener { onAction() } 
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Удалить этот пост")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (status == "на рассмотрении") {
+                    Button(
+                        onClick = {
+                            db.collection("zhirpem_posts").document(postId).update("status", "checked")
+                                .addOnSuccessListener { onAction() }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    ) {
+                        Text("Одобрить", fontSize = 12.sp)
+                    }
+                }
+                
+                Button(
+                    onClick = { 
+                        db.collection("zhirpem_posts").document(postId).delete()
+                            .addOnSuccessListener { onAction() } 
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Удалить", fontSize = 12.sp)
+                }
             }
         }
     }
@@ -508,7 +537,7 @@ suspend fun sendGlobalNotification(db: FirebaseFirestore, title: String, htmlBod
         // 2. Отправка через OneSignal REST API
         val client = OkHttpClient()
         val json = JSONObject()
-        json.put("app_id", "e52144a6-d4ea-46a4-870f-4089ec7a6af9")
+        json.put("app_id", BuildConfig.ONESIGNAL_APP_ID)
         
         // Отправка ВСЕМ активным подписчикам
         json.put("included_segments", org.json.JSONArray(listOf("Subscribed Users")))
@@ -530,11 +559,11 @@ suspend fun sendGlobalNotification(db: FirebaseFirestore, title: String, htmlBod
             val request = Request.Builder()
                 .url("https://onesignal.com/api/v1/notifications")
                 .post(requestBody)
-                .addHeader("Authorization", "Basic os_v2_app_4uqujjwu5jdkjbypice6y6tk7hgycpqrjz7el4eil7itrf3xlinih6ikgpfq6o5l43izejzh4wdmjtrszqsdjvzj455p7mvulqousny")
+                .addHeader("Authorization", "Basic ${BuildConfig.ONESIGNAL_REST_KEY}")
                 .addHeader("Content-Type", "application/json; charset=utf-8")
                 .build()
 
-            Log.d("PushDebug", "Sending to AppID: e52144a6-d4ea-46a4-870f-4089ec7a6af9")
+            Log.d("PushDebug", "Sending to AppID: ${BuildConfig.ONESIGNAL_APP_ID}")
             
             val response = client.newCall(request).execute()
         val responseBody = response.body?.string() ?: ""

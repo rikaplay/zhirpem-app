@@ -90,15 +90,72 @@ object ChatRepository {
         // Уведомление собеседнику
         val peerId = chatId.split("_").firstOrNull { it != senderId } ?: ""
         if (peerId.isNotEmpty()) {
-            sendNotification(
+            checkRecipientAndNotify(
                 db = db,
                 senderId = senderId,
                 senderName = senderName,
                 senderAvatar = senderAvatar,
                 receiverId = peerId,
-                type = "MESSAGE",
+                chatId = chatId,
                 text = "📎 Медиасообщение"
             )
+        }
+    }
+
+    private fun checkRecipientAndNotify(
+        db: FirebaseFirestore,
+        senderId: String,
+        senderName: String,
+        senderAvatar: String,
+        receiverId: String,
+        chatId: String,
+        text: String
+    ) {
+        db.collection("users").document(receiverId).get().addOnSuccessListener { doc ->
+            val isOnlyVerified = doc.getBoolean("isOnlyVerifiedMessages") ?: false
+            
+            fun proceedWithNotification() {
+                val status = doc.getString("status") ?: "offline"
+                val currentScreen = doc.getString("currentScreen") ?: ""
+                val expectedScreen = "ChatScreen_$senderId" // Формат экрана чата
+
+                // 1. Всегда отправляем Push (через существующую функцию)
+                sendNotification(
+                    db = db,
+                    senderId = senderId,
+                    senderName = senderName,
+                    senderAvatar = senderAvatar,
+                    receiverId = receiverId,
+                    type = "CHAT_MESSAGE",
+                    text = text
+                )
+
+                // 2. Если не в чате или оффлайн -> Запись в ленту уведомлений
+                if (status == "offline" || currentScreen != expectedScreen) {
+                    val feedNotify = hashMapOf(
+                        "senderId" to senderId,
+                        "senderName" to senderName,
+                        "senderAvatarUrl" to senderAvatar,
+                        "receiverId" to receiverId,
+                        "type" to "CHAT_MESSAGE",
+                        "text" to text,
+                        "timestamp" to com.google.firebase.Timestamp.now(),
+                        "chatId" to chatId
+                    )
+                    db.collection("notifications").add(feedNotify)
+                }
+            }
+
+            if (isOnlyVerified) {
+                db.collection("users").document(senderId).get().addOnSuccessListener { senderDoc ->
+                    val isVerified = senderDoc.getBoolean("blueBadge") == true || senderDoc.getBoolean("yellowBadge") == true
+                    if (isVerified) {
+                        proceedWithNotification()
+                    }
+                }
+            } else {
+                proceedWithNotification()
+            }
         }
     }
 }

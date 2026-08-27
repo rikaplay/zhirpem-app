@@ -9,6 +9,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Report
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -47,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -55,7 +59,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalHapticFeedback
+import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -69,6 +77,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import androidx.compose.runtime.Immutable
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -76,6 +85,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.graphics.graphicsLayer
@@ -117,6 +127,7 @@ enum class ChatInputMode {
     AUDIO, VIDEO
 }
 
+@Immutable
 data class PollData(
     val question: String = "",
     val options: List<String> = emptyList(),
@@ -125,14 +136,14 @@ data class PollData(
     val votes: Map<String, List<String>> = emptyMap() // Map of option index to list of user IDs
 )
 
+@Immutable
 data class Post(
     val id: String = "",
     val author: String = "",
     val date: String = "",
     val handle: String = "",
     @get:com.google.firebase.firestore.PropertyName("isMedia")
-    @set:com.google.firebase.firestore.PropertyName("isMedia")
-    var isMedia: Boolean = false,
+    val isMedia: Boolean = false,
     val imageUrl: String? = null,
     val mediaUrl: String = "",        // Ссылка на файл (картинка, gif или mp4)
     val mediaType: MediaType = MediaType.NONE, // Тип контента
@@ -152,9 +163,11 @@ data class Post(
     val authorNameColor: String? = null, // Цвет ника (VIP)
     val communityId: String? = null, // Если null — пост в общей ленте
     val poll: PollData? = null, // Опрос
-    val authorStatus: String? = null // Статус автора
+    val authorStatus: String? = null, // Статус автора
+    val tags: List<String> = emptyList() // Теги для системы рекомендаций
 )
 
+@Immutable
 data class Community(
     val id: String = "",
     val name: String = "",
@@ -165,6 +178,7 @@ data class Community(
     val members: List<String> = emptyList() // Список ID участников
 )
 
+@Immutable
 data class User(
     val id: String = "",
     val name: String = "",
@@ -177,16 +191,24 @@ data class User(
     val joinedCommunityId: String? = null, // ID сообщества, в котором он состоит
     val joinedCommunityAvatar: String? = null, // Ссылка на аватар этого сообщества
     val isOnline: Boolean = false,       // Статус в сети
-    val notificationSetting: String = "all" // all, following, none
+    val notificationSetting: String = "all", // all, following, none
+    val blueBadge: Boolean = false,
+    val yellowBadge: Boolean = false,
+    val isOnlyVerifiedMessages: Boolean = false
 )
 
+@Immutable
 data class Chat(
     val id: String = "",
     val participants: List<String> = emptyList(), // Юзернеймы участников
     val lastMessage: String = "",
-    val lastMessageTimestamp: Long = 0L
+    val lastMessageTimestamp: Long = 0L,
+    val theme: String = "DEFAULT",
+    val wallpaperUrl: String? = null,
+    val disappearingDuration: Long = 0L // в миллисекундах
 )
 
+@Immutable
 data class Message(
     val id: String = "",
     val senderId: String = "",
@@ -195,11 +217,15 @@ data class Message(
     val mediaType: MediaType = MediaType.NONE,
     val timestamp: Long = 0L,
     val forwardedPostId: String? = null,
+    val forwardedFrom: String? = null, // Username of original sender
     val replyToId: String? = null,
     val replyToText: String? = null,
-    val isRead: Boolean = false
+    val isRead: Boolean = false,
+    val reactions: Map<String, String> = emptyMap(), // userId -> emoji
+    val expiresAt: Long? = null // null means never
 )
 
+@Immutable
 data class Comment(
     val author: String = "",
     val authorUsername: String = "",
@@ -214,6 +240,7 @@ data class Comment(
     @get:com.google.firebase.firestore.Exclude
     val isLikedByMe: Boolean = false
 )
+
 
 data class PostAnalytics(
     val postId: String = "",
@@ -267,23 +294,42 @@ fun PresenceIndicator(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 12.dp
 ) {
+    val animationsEnabled = LocalAnimationsEnabled.current
+    if (!animationsEnabled) return
+
     var isOnline by remember { mutableStateOf(false) }
+    var privacyLastSeen by remember { mutableStateOf("all") }
+    
     val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance()
+    val db = FirebaseFirestore.getInstance()
     val cleanUsername = username.replace("@", "").trim()
 
-    LaunchedEffect(cleanUsername) {
+    DisposableEffect(cleanUsername) {
+        val statusRef = rtdb.getReference("status/$cleanUsername/state")
+        val listener = object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                isOnline = snapshot.getValue(String::class.java) == "online"
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        }
+        
         if (cleanUsername.isNotEmpty()) {
-            val statusRef = rtdb.getReference("status/$cleanUsername/state")
-            statusRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
-                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
-                    isOnline = snapshot.getValue(String::class.java) == "online"
+            statusRef.addValueEventListener(listener)
+            
+            // Проверка приватности
+            db.collection("users").document(cleanUsername).get().addOnSuccessListener { doc ->
+                if (doc.exists()) {
+                    privacyLastSeen = doc.getString("privacyLastSeen") ?: "all"
                 }
-                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
-            })
+            }
+        }
+
+        onDispose {
+            statusRef.removeEventListener(listener)
         }
     }
 
-    if (isOnline) {
+    if (isOnline && privacyLastSeen != "none") {
         Box(
             modifier = modifier
                 .size(size)
@@ -300,11 +346,15 @@ fun PresenceText(
 ) {
     var status by remember { mutableStateOf("offline") }
     var lastChanged by remember { mutableLongStateOf(0L) }
+    var privacyLastSeen by remember { mutableStateOf("all") }
+    
     val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance()
+    val db = FirebaseFirestore.getInstance()
     val cleanUsername = username.replace("@", "").trim()
 
     LaunchedEffect(cleanUsername) {
         if (cleanUsername.isNotEmpty()) {
+            // RTDB для статуса
             val statusRef = rtdb.getReference("status/$cleanUsername")
             statusRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
                 override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
@@ -313,35 +363,58 @@ fun PresenceText(
                 }
                 override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
             })
+
+            // Firestore для приватности
+            db.collection("users").document(cleanUsername).addSnapshotListener { doc, _ ->
+                if (doc != null && doc.exists()) {
+                    privacyLastSeen = doc.getString("privacyLastSeen") ?: "all"
+                }
+            }
         }
     }
 
-    Text(
-        text = if (status == "online") "В сети" else formatLastSeen(lastChanged),
-        fontSize = 12.sp,
-        color = if (status == "online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-        modifier = modifier
-    )
+    val displayStatus = when {
+        status == "online" -> "В сети"
+        privacyLastSeen == "none" -> "" // Полностью скрываем
+        else -> formatLastSeen(lastChanged)
+    }
+
+    if (displayStatus.isNotEmpty()) {
+        Text(
+            text = displayStatus,
+            fontSize = 12.sp,
+            color = if (status == "online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = modifier
+        )
+    }
 }
 
 fun formatLastSeen(timestamp: Long): String {
     if (timestamp <= 0) return "был(а) недавно"
     val now = System.currentTimeMillis()
     val diff = now - timestamp
-    val seconds = diff / 1000
-    val minutes = seconds / 60
-    val hours = minutes / 60
-    val days = hours / 24
+    
+    val date = Date(timestamp)
+    val calendar = Calendar.getInstance()
+    calendar.time = date
+    
+    val nowCalendar = Calendar.getInstance()
+    
+    val isToday = nowCalendar.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) &&
+                  nowCalendar.get(Calendar.DAY_OF_YEAR) == calendar.get(Calendar.DAY_OF_YEAR)
+                  
+    nowCalendar.add(Calendar.DAY_OF_YEAR, -1)
+    val isYesterday = nowCalendar.get(Calendar.YEAR) == calendar.get(Calendar.YEAR) &&
+                      nowCalendar.get(Calendar.DAY_OF_YEAR) == calendar.get(Calendar.DAY_OF_YEAR)
+
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val fullFormat = SimpleDateFormat("dd.MM.yy в HH:mm", Locale.getDefault())
 
     return when {
-        minutes < 1 -> "был(а) только что"
-        minutes < 60 -> "был(а) $minutes мин. назад"
-        hours < 24 -> "был(а) $hours час. назад"
-        days < 7 -> "был(а) $days дн. назад"
-        else -> {
-            val sdf = SimpleDateFormat("dd.MM.yy", Locale.getDefault())
-            "был(а) " + sdf.format(Date(timestamp))
-        }
+        diff < 60000 -> "был(а) только что"
+        isToday -> "был(а) сегодня в ${timeFormat.format(date)}"
+        isYesterday -> "был(а) вчера в ${timeFormat.format(date)}"
+        else -> "был(а) ${fullFormat.format(date)}"
     }
 }
 
@@ -603,7 +676,14 @@ fun MainMediaScreen(onUserClick: (String) -> Unit, onHashtagClick: (String) -> U
                 ) {
                     items(filteredPosts, key = { it.id }) { post ->
                         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            PostItem(post = post, onUserClick = onUserClick, onHashtagClick = onHashtagClick)
+                            PostItem(
+                                post = post, 
+                                onUserClick = onUserClick, 
+                                onHashtagClick = onHashtagClick,
+                                onLikeClick = { viewModel.toggleLike(it, myUsername) },
+                                onBookmarkClick = { viewModel.toggleBookmark(it, myUsername) },
+                                onRepostClick = { viewModel.toggleRepost(it, myUsername) }
+                            )
                         }
                     }
                     item {
@@ -627,14 +707,30 @@ fun MainMediaScreen(onUserClick: (String) -> Unit, onHashtagClick: (String) -> U
 // 3. ЭЛЕМЕНТ ПОСТА В ЛЕНТЕ
 // ==========================================
 @Composable
-fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String) -> Unit = {}) {
+fun PostItem(
+    post: Post,
+    onUserClick: (String) -> Unit,
+    onHashtagClick: (String) -> Unit = {},
+    onLikeClick: ((Post) -> Unit)? = null,
+    onBookmarkClick: ((Post) -> Unit)? = null,
+    onRepostClick: ((Post) -> Unit)? = null
+) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val db = remember { FirebaseFirestore.getInstance() }
     val prefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
     val myUsername = prefs.getString("username", "") ?: ""
+    val isVibrationEnabled = remember(prefs) { prefs.getBoolean("vibration_enabled", true) }
     val fontSizeMultiplier = LocalFontSize.current
 
-    val isLiked = post.likedBy.contains(myUsername)
+    // Локальное состояние для мгновенного обновления интерфейса
+    var localLikes by remember(post.likes, post.likedBy) { mutableIntStateOf(post.likes) }
+    var localIsLiked by remember(post.likedBy) { mutableStateOf(post.likedBy.contains(myUsername)) }
+    var localIsBookmarked by remember(post.bookmarkedBy) { mutableStateOf(post.bookmarkedBy.contains(myUsername)) }
+    var localIsReposted by remember(post.repostedBy) { mutableStateOf(post.repostedBy.contains(myUsername)) }
+
     val isMyPost = post.handle.replace("@", "") == myUsername
     var isExpanded by remember { mutableStateOf(false) }
     var isCommentsExpanded by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -645,6 +741,13 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
     var showEditDialog by remember { mutableStateOf(false) }
     var editedText by remember { mutableStateOf(post.text) }
     var replyingTo by remember { mutableStateOf<Comment?>(null) }
+
+    // Трекинг просмотров для рекомендаций
+    LaunchedEffect(post.id) {
+        if (myUsername.isNotEmpty() && post.tags.isNotEmpty()) {
+            RecommendationManager.trackInteraction(myUsername, post.tags, 1)
+        }
+    }
 
     if (showEditDialog) {
         AlertDialog(
@@ -713,7 +816,10 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
             .animateContentSize(animationSpec = tween(durationMillis = 300))
             .combinedClickable(
                 onClick = { isExpanded = !isExpanded },
-                onLongClick = { if (isMyPost) isContextMenuExpanded = true }
+                onLongClick = { 
+                    if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    isContextMenuExpanded = true 
+                }
             ),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -791,14 +897,18 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                                 val targetUsername = post.handle.replace("@", "")
                                 var isFollowing by remember { mutableStateOf(false) }
 
-                                LaunchedEffect(myUsername, targetUsername) {
-                                    if (myUsername.isNotEmpty()) {
+                                DisposableEffect(myUsername, targetUsername) {
+                                    val registration = if (myUsername.isNotEmpty()) {
                                         db.collection("follows")
                                             .whereEqualTo("follower", myUsername)
                                             .whereEqualTo("following", targetUsername)
                                             .addSnapshotListener { snapshot, _ ->
                                                 isFollowing = snapshot != null && !snapshot.isEmpty
                                             }
+                                    } else null
+                                    
+                                    onDispose {
+                                        registration?.remove()
                                     }
                                 }
 
@@ -839,21 +949,23 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
 
                         val isLongText = post.text.length > 150
                         
-                        val annotatedText = buildAnnotatedString {
-                            val hashtagRegex = Regex("#[a-zA-Zа-яА-Я0-9_]+")
-                            var lastMatchEnd = 0
-                            
-                            hashtagRegex.findAll(post.text).forEach { match ->
-                                append(post.text.substring(lastMatchEnd, match.range.first))
+                        val annotatedText = remember(post.text) {
+                            buildAnnotatedString {
+                                val hashtagRegex = Regex("#[a-zA-Zа-яА-Я0-9_]+")
+                                var lastMatchEnd = 0
                                 
-                                pushStringAnnotation(tag = "HASHTAG", annotation = match.value)
-                                withStyle(style = SpanStyle(color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)) {
-                                    append(match.value)
+                                hashtagRegex.findAll(post.text).forEach { match ->
+                                    append(post.text.substring(lastMatchEnd, match.range.first))
+                                    
+                                    pushStringAnnotation(tag = "HASHTAG", annotation = match.value)
+                                    withStyle(style = SpanStyle(color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)) {
+                                        append(match.value)
+                                    }
+                                    pop()
+                                    lastMatchEnd = match.range.last + 1
                                 }
-                                pop()
-                                lastMatchEnd = match.range.last + 1
+                                append(post.text.substring(lastMatchEnd))
                             }
-                            append(post.text.substring(lastMatchEnd))
                         }
 
                         ClickableText(
@@ -902,13 +1014,15 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                                     VideoPlayer(videoUrl = finalMediaUrl, modifier = commonModifier)
                                 }
                                 MediaType.GIF -> {
-                                    GifPlayer(gifUrl = finalMediaUrl, modifier = commonModifier.height(320.dp))
+                                    GifPlayer(gifUrl = finalMediaUrl, modifier = commonModifier.height(320.dp).adaptiveImageSize(isLandscape))
                                 }
                                 MediaType.IMAGE -> {
                                     AsyncImage(
                                         model = finalMediaUrl,
                                         contentDescription = "Фото поста",
-                                        modifier = commonModifier.clickable { isImageExpanded = true },
+                                        modifier = commonModifier
+                                            .adaptiveImageSize(isLandscape)
+                                            .clickable { isImageExpanded = true },
                                         contentScale = ContentScale.FillWidth
                                     )
                                 }
@@ -916,7 +1030,9 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                                     AsyncImage(
                                         model = finalMediaUrl,
                                         contentDescription = "Фото поста",
-                                        modifier = commonModifier.clickable { isImageExpanded = true },
+                                        modifier = commonModifier
+                                            .adaptiveImageSize(isLandscape)
+                                            .clickable { isImageExpanded = true },
                                         contentScale = ContentScale.FillWidth
                                     )
                                 }
@@ -957,7 +1073,10 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                             Row(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
-                                    .bounceClick { isCommentsExpanded = !isCommentsExpanded }
+                                    .bounceClick { 
+                                        if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        isCommentsExpanded = !isCommentsExpanded 
+                                    }
                                     .padding(vertical = 6.dp, horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -972,17 +1091,31 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
                                     .bounceClick {
+                                        if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         if (post.id.isNotEmpty() && myUsername.isNotEmpty()) {
-                                            val postRef = db.collection("zhirpem_posts").document(post.id)
-                                            db.runTransaction { transaction ->
-                                                val snapshot = transaction.get(postRef)
-                                                val currentLikes = snapshot.getLong("likes") ?: 0L
-                                                if (post.likedBy.contains(myUsername)) {
-                                                    transaction.update(postRef, "likedBy", FieldValue.arrayRemove(myUsername))
-                                                    transaction.update(postRef, "likes", currentLikes - 1)
-                                                } else {
-                                                    transaction.update(postRef, "likedBy", FieldValue.arrayUnion(myUsername))
-                                                    transaction.update(postRef, "likes", currentLikes + 1)
+                                            if (onLikeClick != null) {
+                                                onLikeClick(post)
+                                            } else {
+                                                val postRef = db.collection("zhirpem_posts").document(post.id)
+                                                
+                                                // Мгновенное обновление UI (Оптимистично)
+                                                val willBeLiked = !localIsLiked
+                                                localLikes = if (willBeLiked) localLikes + 1 else (localLikes - 1).coerceAtLeast(0)
+                                                localIsLiked = willBeLiked
+                                                
+                                                db.runTransaction { transaction ->
+                                                    val snapshot = transaction.get(postRef)
+                                                    val currentLikes = snapshot.getLong("likes") ?: 0L
+                                                    val likedBy = snapshot.get("likedBy") as? List<String> ?: emptyList()
+                                                    
+                                                    if (likedBy.contains(myUsername)) {
+                                                        transaction.update(postRef, "likedBy", FieldValue.arrayRemove(myUsername))
+                                                        transaction.update(postRef, "likes", (currentLikes - 1).coerceAtLeast(0))
+                                                    } else {
+                                                        transaction.update(postRef, "likedBy", FieldValue.arrayUnion(myUsername))
+                                                        transaction.update(postRef, "likes", currentLikes + 1)
+                                                        RecommendationManager.trackInteraction(myUsername, post.tags, 2)
+                                                    }
                                                 }
                                             }
                                         }
@@ -991,15 +1124,15 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    imageVector = if (localIsLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                     contentDescription = "Лайк",
-                                    tint = if (isLiked) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    tint = if (localIsLiked) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = post.likes.toString(),
-                                    color = if (isLiked) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    text = localLikes.toString(),
+                                    color = if (localIsLiked) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                     fontSize = 14.sp * fontSizeMultiplier,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1011,17 +1144,24 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            val isBookmarked = post.bookmarkedBy.contains(myUsername)
                             Row(
                                 modifier = Modifier
                                     .height(36.dp)
                                     .bounceClick {
+                                        if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         if (post.id.isNotEmpty() && myUsername.isNotEmpty()) {
-                                            val postRef = db.collection("zhirpem_posts").document(post.id)
-                                            if (isBookmarked) {
-                                                postRef.update("bookmarkedBy", FieldValue.arrayRemove(myUsername))
+                                            if (onBookmarkClick != null) {
+                                                onBookmarkClick(post)
                                             } else {
-                                                postRef.update("bookmarkedBy", FieldValue.arrayUnion(myUsername))
+                                                val postRef = db.collection("zhirpem_posts").document(post.id)
+                                                val willBeBookmarked = !localIsBookmarked
+                                                localIsBookmarked = willBeBookmarked
+                                                
+                                                if (!willBeBookmarked) {
+                                                    postRef.update("bookmarkedBy", FieldValue.arrayRemove(myUsername))
+                                                } else {
+                                                    postRef.update("bookmarkedBy", FieldValue.arrayUnion(myUsername))
+                                                }
                                             }
                                         }
                                     }
@@ -1029,28 +1169,35 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                                    imageVector = if (localIsBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
                                     contentDescription = "Закладка",
-                                    tint = if (isBookmarked) MaterialTheme.colorScheme.primary else Color.Gray,
+                                    tint = if (localIsBookmarked) MaterialTheme.colorScheme.primary else Color.Gray,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("В закладки", color = if (isBookmarked) MaterialTheme.colorScheme.primary else Color.Gray, fontSize = 13.sp)
+                                Text("В закладки", color = if (localIsBookmarked) MaterialTheme.colorScheme.primary else Color.Gray, fontSize = 13.sp)
                             }
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 // РЕПОСТ
-                                val isReposted = post.repostedBy.contains(myUsername)
                                 Row(
                                     modifier = Modifier
                                         .height(36.dp)
                                         .bounceClick {
+                                            if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             if (post.id.isNotEmpty() && myUsername.isNotEmpty()) {
-                                                val postRef = db.collection("zhirpem_posts").document(post.id)
-                                                if (isReposted) {
-                                                    postRef.update("repostedBy", FieldValue.arrayRemove(myUsername))
+                                                if (onRepostClick != null) {
+                                                    onRepostClick(post)
                                                 } else {
-                                                    postRef.update("repostedBy", FieldValue.arrayUnion(myUsername))
+                                                    val postRef = db.collection("zhirpem_posts").document(post.id)
+                                                    val willBeReposted = !localIsReposted
+                                                    localIsReposted = willBeReposted
+                                                    
+                                                    if (!willBeReposted) {
+                                                        postRef.update("repostedBy", FieldValue.arrayRemove(myUsername))
+                                                    } else {
+                                                        postRef.update("repostedBy", FieldValue.arrayUnion(myUsername))
+                                                    }
                                                 }
                                             }
                                         }
@@ -1060,11 +1207,11 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                                     Icon(
                                         imageVector = Icons.Default.Repeat,
                                         contentDescription = "Репост",
-                                        tint = if (isReposted) Color.Green else Color.Gray,
+                                        tint = if (localIsReposted) Color.Green else Color.Gray,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Репост", color = if (isReposted) Color.Green else Color.Gray, fontSize = 13.sp)
+                                    Text("Репост", color = if (localIsReposted) Color.Green else Color.Gray, fontSize = 13.sp)
                                 }
 
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -1109,7 +1256,9 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                         ) {
                             ZoomableImage(
                                 imageUrl = post.imageUrl,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .adaptiveImageSize(isLandscape)
                             )
                             IconButton(
                                 onClick = { isImageExpanded = false },
@@ -1153,23 +1302,35 @@ fun PostItem(post: Post, onUserClick: (String) -> Unit, onHashtagClick: (String)
                 expanded = isContextMenuExpanded,
                 onDismissRequest = { isContextMenuExpanded = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Редактировать") },
-                    onClick = {
-                        isContextMenuExpanded = false
-                        editedText = post.text
-                        showEditDialog = true
-                    },
-                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                )
-                DropdownMenuItem(
-                    text = { Text("Удалить", color = MaterialTheme.colorScheme.error) },
-                    onClick = {
-                        isContextMenuExpanded = false
-                        showDeleteDialog = true
-                    },
-                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                )
+                if (isMyPost) {
+                    DropdownMenuItem(
+                        text = { Text("Редактировать") },
+                        onClick = {
+                            isContextMenuExpanded = false
+                            editedText = post.text
+                            showEditDialog = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Удалить", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            isContextMenuExpanded = false
+                            showDeleteDialog = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text("Пожаловаться", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            isContextMenuExpanded = false
+                            db.collection("zhirpem_posts").document(post.id).update("status", "на рассмотрении")
+                            android.widget.Toast.makeText(context, "Жалоба отправлена на рассмотрение", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Report, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                    )
+                }
             }
         }
     }
@@ -1186,8 +1347,10 @@ fun CommentList(
     onReply: (Comment) -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
     val myUsername = prefs.getString("username", "") ?: ""
+    val isVibrationEnabled = remember(prefs) { prefs.getBoolean("vibration_enabled", true) }
 
     var comments by remember { mutableStateOf(listOf<Comment>()) }
     val db = FirebaseFirestore.getInstance()
@@ -1223,7 +1386,7 @@ fun CommentList(
                         .fillMaxWidth()
                         .padding(start = if (isReply) 24.dp else 0.dp)
                         .combinedClickable(
-                            onClick = { /* Можно открыть профиль или ветку */ },
+                            onClick = { onReply(comment) },
                             onLongClick = { onReply(comment) }
                         ),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1266,6 +1429,7 @@ fun CommentList(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         IconButton(
                             onClick = {
+                                if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (comment.id.isNotEmpty() && myUsername.isNotEmpty()) {
                                     val commentRef = db.collection("comments").document(comment.id)
                                     if (comment.isLikedByMe) {
@@ -1316,8 +1480,11 @@ fun CommentInput(
     onCancelReply: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
     val prefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
+    val isVibrationEnabled = remember(prefs) { prefs.getBoolean("vibration_enabled", true) }
     var text by remember { mutableStateOf("") }
 
     // Автоматическая подстановка тега при выборе ответа
@@ -1327,6 +1494,7 @@ fun CommentInput(
             if (!text.contains(tag)) {
                 text = tag + text.replace(Regex("^@[a-zA-Z0-9_]+\\s"), "")
             }
+            focusRequester.requestFocus()
         }
     }
 
@@ -1425,7 +1593,7 @@ fun CommentInput(
                 value = text,
                 onValueChange = { text = it },
                 placeholder = { Text("Ваш ответ...", fontSize = 14.sp) },
-                modifier = Modifier.weight(1f).clip(RoundedCornerShape(20.dp)),
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).focusRequester(focusRequester),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.background,
                     unfocusedContainerColor = MaterialTheme.colorScheme.background,
@@ -1437,7 +1605,10 @@ fun CommentInput(
             )
 
             Button(
-                onClick = { sendComment() },
+                onClick = { 
+                    if (isVibrationEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    sendComment() 
+                },
                 shape = CircleShape,
                 contentPadding = PaddingValues(0.dp),
                 modifier = Modifier.size(46.dp).bounceClick(),
@@ -2028,7 +2199,8 @@ fun UserProfileScreen(
     username: String, 
     onBack: () -> Unit, 
     onNavigateToChat: (String) -> Unit = {},
-    onHashtagClick: (String) -> Unit = {}
+    onHashtagClick: (String) -> Unit = {},
+    onNavigateToProfile: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("user_session", Context.MODE_PRIVATE) }
@@ -2047,9 +2219,20 @@ fun UserProfileScreen(
     var isEditingBio by remember { mutableStateOf(false) }
     var isEditingStatus by remember { mutableStateOf(false) }
     var isMoreMenuExpanded by remember { mutableStateOf(false) }
+    var isCustomizationMenuExpanded by remember { mutableStateOf(false) }
+    var showColorPicker by remember { mutableStateOf(false) }
+    var hideFollowsByOwner by remember { mutableStateOf(false) }
+    var showFollowListDialog by remember { mutableStateOf(false) }
+    var followListType by remember { mutableStateOf("followers") }
     
     var posts by remember { mutableStateOf(listOf<Post>()) }
     var repostedPosts by remember { mutableStateOf(listOf<Post>()) }
+    var postsLimit by remember { mutableLongStateOf(10L) }
+    var repostsLimit by remember { mutableLongStateOf(10L) }
+    var hasMorePosts by remember { mutableStateOf(true) }
+    var hasMoreReposts by remember { mutableStateOf(true) }
+    var totalPostsCount by remember { mutableIntStateOf(0) }
+    
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
     var isUploading by remember { mutableStateOf(false) }
@@ -2110,6 +2293,33 @@ fun UserProfileScreen(
         }
     }
 
+    LaunchedEffect(username, postsLimit) {
+        db.collection("zhirpem_posts")
+            .whereEqualTo("handle", "@$username")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(postsLimit)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    posts = snap.documents.mapNotNull { it.toObject(Post::class.java)?.copy(id = it.id) }
+                    hasMorePosts = snap.size() >= postsLimit
+                }
+            }
+    }
+
+    LaunchedEffect(username, repostsLimit) {
+        db.collection("zhirpem_posts")
+            .whereArrayContains("repostedBy", username)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(repostsLimit)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    repostedPosts = snap.documents.mapNotNull { it.toObject(Post::class.java)?.copy(id = it.id) }
+                    hasMoreReposts = snap.size() >= repostsLimit
+                }
+                isLoading = false
+            }
+    }
+
     LaunchedEffect(username) {
         db.collection("users").document(username).addSnapshotListener { doc, _ ->
             if (doc != null && doc.exists()) {
@@ -2123,26 +2333,9 @@ fun UserProfileScreen(
                 joinedCommunityAvatar = doc.getString("joinedCommunityAvatar")
                 status = doc.getString("status") ?: ""
                 bannerUrl = doc.getString("bannerUrl")
+                hideFollowsByOwner = doc.getBoolean("hideFollows") ?: false
             }
         }
-        db.collection("zhirpem_posts")
-            .whereEqualTo("handle", "@$username")
-            .addSnapshotListener { snap, _ ->
-                if (snap != null) {
-                    val unsortedPosts = snap.documents.mapNotNull { it.toObject(Post::class.java)?.copy(id = it.id) }
-                    posts = unsortedPosts.sortedByDescending { it.timestamp }
-                }
-            }
-
-        db.collection("zhirpem_posts")
-            .whereArrayContains("repostedBy", username)
-            .addSnapshotListener { snap, _ ->
-                if (snap != null) {
-                    val unsortedPosts = snap.documents.mapNotNull { it.toObject(Post::class.java)?.copy(id = it.id) }
-                    repostedPosts = unsortedPosts.sortedByDescending { it.timestamp }
-                }
-                isLoading = false
-            }
 
         if (myUsername.isNotEmpty() && myUsername != username) {
             db.collection("follows")
@@ -2152,6 +2345,12 @@ fun UserProfileScreen(
                     isFollowing = snapshot != null && !snapshot.isEmpty
                 }
         }
+
+        db.collection("zhirpem_posts")
+            .whereEqualTo("handle", "@$username")
+            .addSnapshotListener { snap, _ ->
+                totalPostsCount = snap?.size() ?: 0
+            }
     }
 
     // Обновление FCM-токена при входе в свой профиль
@@ -2200,6 +2399,26 @@ fun UserProfileScreen(
         )
     }
 
+    val listState = rememberLazyListState()
+    
+    // Автозагрузка при достижении конца списка
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+            lastVisibleItem != null && lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 2
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value) {
+            if (selectedTabIndex == 0 && hasMorePosts) {
+                postsLimit += 10
+            } else if (selectedTabIndex == 1 && hasMoreReposts) {
+                repostsLimit += 10
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             Row(
@@ -2212,7 +2431,7 @@ fun UserProfileScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                    Text("${posts.size} записей", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                    Text("$totalPostsCount записей", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
 
                 }
 
@@ -2246,9 +2465,50 @@ fun UserProfileScreen(
                 }
 
                 if (myUsername == username) {
-                    var showColorPicker by remember { mutableStateOf(false) }
-                    IconButton(onClick = { showColorPicker = true }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Цвет баннера", tint = MaterialTheme.colorScheme.primary)
+                    Box {
+                        IconButton(onClick = { isCustomizationMenuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Настройка", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        DropdownMenu(
+                            expanded = isCustomizationMenuExpanded,
+                            onDismissRequest = { isCustomizationMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Цвет баннера") },
+                                onClick = {
+                                    isCustomizationMenuExpanded = false
+                                    showColorPicker = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Загрузить баннер") },
+                                onClick = {
+                                    isCustomizationMenuExpanded = false
+                                    bannerPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
+                            )
+                            if (!bannerUrl.isNullOrEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("Удалить баннер") },
+                                    onClick = {
+                                        isCustomizationMenuExpanded = false
+                                        db.collection("users").document(username).update("bannerUrl", null)
+                                        bannerUrl = null
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Изменить аватар") },
+                                onClick = {
+                                    isCustomizationMenuExpanded = false
+                                    photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                            )
+                        }
                     }
 
                     if (showColorPicker) {
@@ -2292,290 +2552,437 @@ fun UserProfileScreen(
             }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(paddingValues).verticalScroll(rememberScrollState())) {
-            val parsedColor = try { Color(android.graphics.Color.parseColor(bannerColor)) } catch (e: Exception) { MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) }
-            Box(modifier = Modifier.fillMaxWidth().height(140.dp).background(parsedColor)) {
-                if (!bannerUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = bannerUrl,
-                        contentDescription = "Баннер",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                if (myUsername == username) {
-                    Row(
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(paddingValues)
+        ) {
+            item {
+                val parsedColor = try { Color(android.graphics.Color.parseColor(bannerColor)) } catch (e: Exception) { MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) }
+                // Обертка для баннера и аватарки, чтобы аватарка могла выходить за границы баннера
+                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    // Контейнер баннера с обрезкой углов
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .fillMaxWidth()
+                            .height(170.dp)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(parsedColor)
                     ) {
                         if (!bannerUrl.isNullOrEmpty()) {
-                            IconButton(
-                                onClick = {
-                                    db.collection("users").document(username).update("bannerUrl", null)
-                                    bannerUrl = null
-                                },
-                                modifier = Modifier
-                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                    .size(32.dp)
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Удалить баннер", tint = Color.White, modifier = Modifier.size(20.dp))
-                            }
-                        }
-
-                        IconButton(
-                            onClick = { bannerPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                .size(32.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Загрузить баннер", tint = Color.White, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .padding(start = 20.dp)
-                        .size(100.dp)
-                        .align(Alignment.BottomStart)
-                        .offset(y = 50.dp)
-                ) {
-                    AsyncImage(
-                        model = avatarUrl,
-                        contentDescription = "Аватар",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface)
-                            .border(4.dp, MaterialTheme.colorScheme.background, CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-
-                    // Точка "В сети"
-                    PresenceIndicator(
-                        username = username,
-                        modifier = Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 4.dp),
-                        size = 18.dp
-                    )
-
-                    // Бейдж сообщества
-                    if (joinedCommunityId != null) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .align(Alignment.BottomEnd)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.background)
-                                .padding(2.dp)
-                        ) {
-                            CommunityAvatar(url = joinedCommunityAvatar, size = 28.dp)
-                        }
-                    }
-
-                    if (myUsername == username) {
-                        IconButton(
-                            onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .size(32.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
-                        ) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Изменить", tint = Color.White, modifier = Modifier.size(16.dp))
-                        }
-                    }
-
-                    if (isUploading) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(50.dp))
-
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(name, fontSize = 28.sp * fontSizeMultiplier, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onBackground)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            VerifiedBadge(isBlue = blueBadge, isYellow = yellowBadge)
-                        }
-                        Text("@$username", fontSize = 16.sp * fontSizeMultiplier, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-                        
-                        if (status.isNotEmpty() || myUsername == username) {
-                            Text(
-                                text = if (status.isEmpty()) "Установить статус..." else status,
-                                fontSize = 14.sp * fontSizeMultiplier,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier
-                                    .padding(top = 4.dp)
-                                    .clickable(enabled = myUsername == username) { isEditingStatus = true }
+                            AsyncImage(
+                                model = bannerUrl,
+                                contentDescription = "Баннер",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
                             )
                         }
                     }
 
-                    if (myUsername.isNotEmpty() && myUsername != username) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Button(
-                                onClick = {
-                                    openOrCreateChat(context, myUsername, username) { chatId ->
-                                        onNavigateToChat(chatId)
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                shape = RoundedCornerShape(20.dp),
-                                modifier = Modifier.padding(end = 8.dp)
-                            ) {
-                                Text("Написать", fontWeight = FontWeight.Bold)
-                            }
+                    // Аватарка (теперь снаружи клиппинга баннера)
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 20.dp)
+                            .size(110.dp)
+                            .align(Alignment.BottomStart)
+                            .offset(y = 55.dp) // Смещение вниз наполовину размера
+                    ) {
+                        AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = "Аватар",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surface)
+                                .border(4.dp, MaterialTheme.colorScheme.background, CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
 
-                            if (!isFollowing) {
+                        // Точка "В сети"
+                        PresenceIndicator(
+                            username = username,
+                            modifier = Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 4.dp),
+                            size = 18.dp
+                        )
+
+                        // Бейдж сообщества
+                        if (joinedCommunityId != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .align(Alignment.BottomEnd)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .padding(2.dp)
+                            ) {
+                                CommunityAvatar(url = joinedCommunityAvatar, size = 28.dp)
+                            }
+                        }
+
+                        if (myUsername == username) {
+                            IconButton(
+                                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(32.dp)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                    .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
+                            ) {
+                                Icon(Icons.Filled.Edit, contentDescription = "Изменить", tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        if (isUploading) {
+                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+
+            item { Spacer(modifier = Modifier.height(60.dp)) }
+
+            item {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(name, fontSize = 28.sp * fontSizeMultiplier, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onBackground)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                VerifiedBadge(isBlue = blueBadge, isYellow = yellowBadge)
+                            }
+                            Text("@$username", fontSize = 16.sp * fontSizeMultiplier, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                            
+                            PresenceText(username = username, modifier = Modifier.padding(vertical = 6.dp))
+
+                            if (status.isNotEmpty() || myUsername == username) {
+                                Text(
+                                    text = if (status.isEmpty()) "Установить статус..." else status,
+                                    fontSize = 15.sp * fontSizeMultiplier,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .clickable(enabled = myUsername == username) { isEditingStatus = true }
+                                )
+                            }
+                        }
+
+                        if (myUsername.isNotEmpty() && myUsername != username) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Button(
                                     onClick = {
-                                        val followData = hashMapOf(
-                                            "follower" to myUsername,
-                                            "following" to username,
-                                            "timestamp" to FieldValue.serverTimestamp()
-                                        )
-                                        db.collection("follows").add(followData)
+                                        openOrCreateChat(context, myUsername, username) { chatId ->
+                                            onNavigateToChat(chatId)
+                                        }
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
-                                    shape = RoundedCornerShape(20.dp)
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.padding(end = 8.dp)
                                 ) {
-                                    Text("Читать", fontWeight = FontWeight.Bold)
+                                    Text("Написать", fontWeight = FontWeight.Bold)
+                                }
+
+                                if (!isFollowing) {
+                                    Button(
+                                        onClick = {
+                                            val followData = hashMapOf(
+                                                "follower" to myUsername,
+                                                "following" to username,
+                                                "timestamp" to FieldValue.serverTimestamp()
+                                            )
+                                            db.collection("follows").add(followData)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                                        shape = RoundedCornerShape(20.dp)
+                                    ) {
+                                        Text("Читать", fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // РАЗДЕЛ БИО (Описание профиля)
-                val animationsEnabled = LocalAnimationsEnabled.current
-                Box(modifier = Modifier.then(
-                    if (animationsEnabled) {
-                        Modifier.animateContentSize(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    // РАЗДЕЛ БИО (Описание профиля)
+                    val animationsEnabled = LocalAnimationsEnabled.current
+                    Box(modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                        .padding(16.dp)
+                        .then(
+                            if (animationsEnabled) {
+                                Modifier.animateContentSize(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    )
+                                )
+                            } else Modifier
                         )
-                    } else Modifier
-                )) {
-                    if (isEditingBio) {
-                        var tempBio by remember { mutableStateOf(bio) }
-                        Column {
-                            OutlinedTextField(
-                                value = tempBio,
-                                onValueChange = { tempBio = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("О себе") },
-                                shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isEditingBio) {
+                            var tempBio by remember { mutableStateOf(bio) }
+                            Column {
+                                OutlinedTextField(
+                                    value = tempBio,
+                                    onValueChange = { tempBio = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("О себе") },
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    TextButton(onClick = { isEditingBio = false }) { Text("Отмена") }
+                                    TextButton(onClick = {
+                                        db.collection("users").document(username).update("bio", tempBio)
+                                        isEditingBio = false
+                                    }) { Text("Сохранить") }
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = if (bio.isEmpty()) "Добавьте описание профиля, чтобы о вас узнали больше ✨" else bio,
+                                modifier = Modifier.fillMaxWidth().clickable { if (myUsername == username) isEditingBio = true },
+                                fontSize = 15.sp * fontSizeMultiplier,
+                                lineHeight = 20.sp,
+                                color = if (bio.isEmpty()) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onBackground
                             )
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                TextButton(onClick = { isEditingBio = false }) { Text("Отмена") }
-                                TextButton(onClick = {
-                                    db.collection("users").document(username).update("bio", tempBio)
-                                    isEditingBio = false
-                                }) { Text("Сохранить") }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // Секция подписчиков/подписок
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            .padding(vertical = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        var followingCount by remember { mutableIntStateOf(0) }
+                        var followersCount by remember { mutableIntStateOf(0) }
+
+                        LaunchedEffect(username) {
+                            db.collection("follows").whereEqualTo("follower", username).addSnapshotListener { snap, _ ->
+                                followingCount = snap?.size() ?: 0
+                            }
+                            db.collection("follows").whereEqualTo("following", username).addSnapshotListener { snap, _ ->
+                                followersCount = snap?.size() ?: 0
                             }
                         }
-                    } else {
-                        Text(
-                            text = if (bio.isEmpty()) "Нажмите, чтобы добавить описание..." else bio,
-                            modifier = Modifier.fillMaxWidth().clickable { if (myUsername == username) isEditingBio = true },
-                            fontSize = 14.sp * fontSizeMultiplier,
-                            color = if (bio.isEmpty()) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onBackground
+
+                        Column(
+                            modifier = Modifier.clickable { 
+                                if (!hideFollowsByOwner || myUsername == username) {
+                                    followListType = "following"
+                                    showFollowListDialog = true
+                                } else {
+                                    android.widget.Toast.makeText(context, "Пользователь скрыл список подписок", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(text = followingCount.toString(), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            Text(text = "подписок", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                        }
+                        
+                        Box(modifier = Modifier.width(1.dp).height(30.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)))
+
+                        Column(
+                            modifier = Modifier.clickable { 
+                                if (!hideFollowsByOwner || myUsername == username) {
+                                    followListType = "followers"
+                                    showFollowListDialog = true
+                                } else {
+                                    android.widget.Toast.makeText(context, "Пользователь скрыл список подписчиков", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(text = followersCount.toString(), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            Text(text = "подписчиков", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                        }
+                    }
+                }
+            }
+
+            item {
+                // Вкладки
+                val tabs = listOf("Записи", "Репосты")
+                TabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    divider = {},
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabIndex = index },
+                            text = { 
+                                Text(
+                                    title, 
+                                    fontWeight = if (selectedTabIndex == index) FontWeight.ExtraBold else FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                ) 
+                            }
                         )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Секция подписчиков/подписок
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    var followingCount by remember { mutableIntStateOf(0) }
-                    var followersCount by remember { mutableIntStateOf(0) }
-
-                    LaunchedEffect(username) {
-                        db.collection("follows").whereEqualTo("follower", username).addSnapshotListener { snap, _ ->
-                            followingCount = snap?.size() ?: 0
-                        }
-                        db.collection("follows").whereEqualTo("following", username).addSnapshotListener { snap, _ ->
-                            followersCount = snap?.size() ?: 0
-                        }
-                    }
-
-                    Row(modifier = Modifier.clickable { /* Навигация в список подписок */ }) {
-                        Text(text = followingCount.toString(), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "читает", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-                    }
-                    
-                    Spacer(modifier = Modifier.width(20.dp))
-
-                    Row(modifier = Modifier.clickable { /* Навигация в список подписчиков */ }) {
-                        Text(text = followersCount.toString(), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "читателей", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), thickness = 1.dp)
             }
-
-            // Вкладки
-            val tabs = listOf("Записи", "Репосты")
-            TabRow(
-                selectedTabIndex = selectedTabIndex,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary,
-                divider = {}
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTabIndex == index,
-                        onClick = { selectedTabIndex = index },
-                        text = { Text(title, fontWeight = FontWeight.Bold) }
-                    )
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), thickness = 1.dp)
 
             if (isLoading) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    repeat(3) { ShimmerPostItem() }
-                }
+                items(3) { ShimmerPostItem() }
             } else {
                 val currentList = if (selectedTabIndex == 0) posts else repostedPosts
                 if (currentList.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        Text(if (selectedTabIndex == 0) "У пользователя пока нет записей 🤷‍♂️" else "У пользователя пока нет репостов 🤷‍♂️", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text(if (selectedTabIndex == 0) "У пользователя пока нет записей 🤷‍♂️" else "У пользователя пока нет репостов 🤷‍♂️", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                        }
                     }
                 } else {
-                    // Используем Column вместо LazyColumn внутри прокручиваемого Column, либо Box с фикс высотой
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        currentList.forEach { post ->
-                            PostItem(post = post, onUserClick = { if (it != username) onBack(); }, onHashtagClick = onHashtagClick)
+                    items(currentList, key = { it.id }) { post ->
+                        Box(modifier = Modifier.padding(16.dp)) {
+                            PostItem(post = post, onUserClick = { if (it != username) onNavigateToProfile(it); }, onHashtagClick = onHashtagClick)
+                        }
+                    }
+                    
+                    // Индикатор загрузки внизу, если есть еще данные
+                    val hasMore = if (selectedTabIndex == 0) hasMorePosts else hasMoreReposts
+                    if (hasMore) {
+                        item {
+                            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    if (showFollowListDialog) {
+        FollowListDialog(
+            username = username,
+            type = followListType,
+            onDismiss = { showFollowListDialog = false },
+            onUserClick = { clickedUser ->
+                showFollowListDialog = false
+                if (clickedUser != username) {
+                    onNavigateToProfile(clickedUser)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun FollowListDialog(
+    username: String,
+    type: String, // "followers" or "following"
+    onDismiss: () -> Unit,
+    onUserClick: (String) -> Unit
+) {
+    val db = FirebaseFirestore.getInstance()
+    var userList by remember { mutableStateOf(listOf<String>()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(username, type) {
+        val field = if (type == "followers") "following" else "follower"
+        val targetField = if (type == "followers") "follower" else "following"
+        
+        db.collection("follows")
+            .whereEqualTo(field, username)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                userList = snapshot.documents.mapNotNull { it.getString(targetField) }
+                isLoading = false
+            }
+            .addOnFailureListener { isLoading = false }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(500.dp),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = if (type == "followers") "Подписчики" else "Подписки",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (userList.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Список пуст")
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(userList) { uid ->
+                            FollowUserItem(uid, onUserClick)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FollowUserItem(uid: String, onClick: (String) -> Unit) {
+    val db = FirebaseFirestore.getInstance()
+    var name by remember { mutableStateOf("...") }
+    var avatarUrl by remember { mutableStateOf<String?>(null) }
+    var blueBadge by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uid) {
+        db.collection("users").document(uid).get().addOnSuccessListener { doc ->
+            name = doc.getString("name") ?: uid
+            avatarUrl = doc.getString("avatarUrl")
+            blueBadge = doc.getBoolean("blueBadge") ?: false
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick(uid) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = avatarUrl,
+            contentDescription = null,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(name, fontWeight = FontWeight.Bold)
+                if (blueBadge) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(Icons.Default.Verified, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                }
+            }
+            Text("@$uid", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
         }
     }
 }
