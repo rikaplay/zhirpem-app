@@ -9,7 +9,6 @@ export const MessagesScreen = ({ myUsername, onChatClick }: any) => {
   const [chats, setChats] = useState<any[]>([]);
 
   useEffect(() => {
-    // В Android чаты обычно ищутся в 'chats' где в массиве 'participants' есть текущий пользователь
     const q = query(
       collection(db, "chats"),
       where("participants", "array-contains", myUsername),
@@ -23,9 +22,16 @@ export const MessagesScreen = ({ myUsername, onChatClick }: any) => {
 
   return (
     <div className="min-h-screen px-4 pt-4 pb-32 space-y-2">
-      <div className="flex items-center justify-between px-2 mb-6">
+      <div className="flex items-center justify-between px-2 mb-2">
         <h2 className="text-2xl font-black uppercase tracking-tighter text-zinc-400">Сообщения</h2>
         <MessageSquarePlus size={28} className="text-zinc-400" />
+      </div>
+
+      {/* Текст запрошенный пользователем */}
+      <div className="px-2 mb-6">
+        <p className="text-primary font-black text-sm uppercase tracking-widest bg-primary/5 py-2 px-4 rounded-xl inline-block">
+          Выход в 1.6.2
+        </p>
       </div>
 
       {chats.map((chat) => {
