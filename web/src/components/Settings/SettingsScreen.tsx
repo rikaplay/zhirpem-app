@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-    ArrowLeft, User, AtSign, Shield, Eye,
-    Users, CheckCircle2, Lock, Palette, Smartphone, Droplets,
-    Rocket, Volume2, MessageSquare, BadgeCheck,
-    Music, Bell, Trash2, Zap, HelpCircle, Info, Share2
+    ArrowLeft, User, AtSign, Eye,
+    Users, CheckCircle2, Lock, Palette, Droplets,
+    Rocket, Volume2, Bell, Trash2, Zap, HelpCircle, Info, RefreshCw, Share2
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -13,7 +12,6 @@ import { doc, updateDoc } from 'firebase/firestore';
 export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
   const [theme, setTheme] = useState('Светлая');
   const [isGlassEnabled, setIsGlassEnabled] = useState(true);
-  const [isOnlyVerified, setIsOnlyVerified] = useState(false);
   const [isReadReceipts, setIsReadReceipts] = useState(true);
   const [isHideFollows, setIsHideFollows] = useState(false);
 
@@ -22,16 +20,13 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [newName, setNewName] = useState(user.name);
   const [newUsername, setNewUsername] = useState(user.id);
-  const [is2faEnabled, setIs2faEnabled] = useState(false);
 
   useEffect(() => {
     const savedGlass = localStorage.getItem('glass_enabled') !== 'false';
     setIsGlassEnabled(savedGlass);
     if (document.documentElement.classList.contains('dark')) setTheme('Темная');
-    setIsOnlyVerified(user.isOnlyVerifiedMessages || false);
     setIsReadReceipts(user.readReceipts !== false);
     setIsHideFollows(user.hideFollows || false);
-    setIs2faEnabled(user.is2faEnabled || false);
   }, [user]);
 
   const toggleTheme = () => {
@@ -60,8 +55,6 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
   };
 
   const handleSaveUsername = async () => {
-    // Note: in a real app changing document ID is complex,
-    // usually we'd update a field and ensure uniqueness.
     await updateFirebaseSetting('username', newUsername);
     setIsEditingUsername(false);
   };
@@ -110,13 +103,12 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
         <Section title="Аккаунт">
             <Item icon={User} label="Имя" value={newName} color="bg-blue-500" onClick={() => setIsEditingName(true)} />
             <Item icon={AtSign} label="Юзернейм" value={`@${newUsername}`} color="bg-cyan-500" onClick={() => setIsEditingUsername(true)} />
-            <Item icon={Shield} label="Безопасность" value="Код восстановления доступа" color="bg-zinc-400" />
         </Section>
 
         {isEditingName && (
             <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
                 <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 w-full max-w-md shadow-2xl">
-                    <h3 className="text-xl font-black mb-4">Изменить имя</h3>
+                    <h3 className="text-xl font-black mb-4 uppercase tracking-tighter">Изменить имя</h3>
                     <input
                         className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-2xl p-4 outline-none font-bold mb-6"
                         value={newName} onChange={e => setNewName(e.target.value)}
@@ -132,7 +124,7 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
         {isEditingUsername && (
             <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
                 <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 w-full max-w-md shadow-2xl">
-                    <h3 className="text-xl font-black mb-4">Изменить юзернейм</h3>
+                    <h3 className="text-xl font-black mb-4 uppercase tracking-tighter">Изменить юзернейм</h3>
                     <input
                         className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-2xl p-4 outline-none font-bold mb-6"
                         value={newUsername} onChange={e => setNewUsername(e.target.value.replace(/\s/g, '').toLowerCase())}
@@ -150,13 +142,10 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
             <Item icon={User} label="Фото профиля" value="Все" color="bg-blue-600" />
             <Item icon={Users} label="Скрыть подписки" color="bg-indigo-500" isSwitch checked={isHideFollows} onClick={() => updateFirebaseSetting('hideFollows', !isHideFollows, setIsHideFollows)} />
             <Item icon={CheckCircle2} label="Отчеты о прочтении" color="bg-purple-600" isSwitch checked={isReadReceipts} onClick={() => updateFirebaseSetting('readReceipts', !isReadReceipts, setIsReadReceipts)} />
-            <Item icon={Lock} label="Защита приложения" color="bg-black" isSwitch />
         </Section>
 
         <Section title="Внешний вид">
             <Item icon={Palette} label="Тема оформления" value={theme} color="bg-purple-500" onClick={toggleTheme} />
-            <Item icon={Smartphone} label="Иконка приложения" color="bg-green-600" />
-            <Item icon={Droplets} label="Своя палитра" color="bg-orange-500" isSwitch />
             <Item icon={Droplets} label="Эффект стекла" color="bg-cyan-600" isSwitch checked={isGlassEnabled} onClick={toggleGlass} />
         </Section>
 
@@ -165,11 +154,32 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
             <Item icon={Volume2} label="Звук запуска" color="bg-yellow-500" isSwitch checked />
         </Section>
 
-        <Section title="Чаты и звонки">
-            <Item icon={MessageSquare} label="Оформление чатов" color="bg-indigo-600" />
-            <Item icon={BadgeCheck} label="Только проверенные" color="bg-green-500" isSwitch checked={isOnlyVerified} onClick={() => updateFirebaseSetting('isOnlyVerifiedMessages', !isOnlyVerified, setIsOnlyVerified)} />
-            <Item icon={Music} label="Мелодия вызова" value="Tune 2" color="bg-orange-500" />
-            <Item icon={Shield} label="Двухфакторная аутентификация" color="bg-red-500" isSwitch checked={is2faEnabled} onClick={() => updateFirebaseSetting('is2faEnabled', !is2faEnabled, setIs2faEnabled)} />
+        <Section title="Система">
+            <Item icon={Bell} label="Уведомления" value="Все" color="bg-red-500" />
+            <div className="px-12 py-2 space-y-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 rounded-full border-2 border-primary flex items-center justify-center">
+                        <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                    </div>
+                    <span className="font-bold text-sm">Все</span>
+                </div>
+                <div className="flex items-center gap-3 opacity-50">
+                    <div className="w-5 h-5 rounded-full border-2 border-zinc-400" />
+                    <span className="font-bold text-sm">Читаемые</span>
+                </div>
+                <div className="flex items-center gap-3 opacity-50">
+                    <div className="w-5 h-5 rounded-full border-2 border-zinc-400" />
+                    <span className="font-bold text-sm">Никто</span>
+                </div>
+            </div>
+            <Item icon={Smartphone} label="Вибрация" color="bg-green-500" isSwitch checked />
+        </Section>
+
+        <Section title="Поддержка и О приложении">
+            <Item icon={HelpCircle} label="Написать в поддержку" color="bg-blue-600" />
+            <Item icon={Info} label="FAQ / База знаний" color="bg-purple-600" />
+            <Item icon={RefreshCw} label="Обновления" color="bg-blue-500" />
+            <Item icon={Share2} label="Пригласить друзей" color="bg-green-500" />
         </Section>
 
         <button

@@ -18,18 +18,27 @@ interface SidebarProps {
   user: User;
   onLogout: () => void;
   onSettingsOpen: () => void;
-  onProfileOpen: (username: string) => void; // Добавили
+  onProfileOpen: (username: string) => void;
+  onTabOpen: (tab: string) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, user, onLogout, onSettingsOpen, onProfileOpen }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  isOpen,
+  onClose,
+  user,
+  onLogout,
+  onSettingsOpen,
+  onProfileOpen,
+  onTabOpen
+}) => {
   if (!isOpen) return null;
 
   const menuItems = [
     { icon: <UserIcon size={22} />, label: "Мой Профиль", color: "text-blue-500", onClick: () => onProfileOpen(user.id) },
     { icon: <Settings size={22} />, label: "Настройки", color: "text-zinc-500", onClick: onSettingsOpen },
-    { icon: <Bookmark size={22} />, label: "Закладки", color: "text-primary", onClick: () => {} },
-    { icon: <Users size={22} />, label: "Сообщества", color: "text-orange-500", onClick: () => {} },
-    { icon: <BarChart3 size={22} />, label: "Статистика", color: "text-purple-500", onClick: () => {} },
+    { icon: <Bookmark size={22} />, label: "Закладки", color: "text-primary", onClick: () => onTabOpen('bookmarks') },
+    { icon: <Users size={22} />, label: "Сообщества", color: "text-orange-500", onClick: () => onTabOpen('communities') },
+    { icon: <BarChart3 size={22} />, label: "Статистика", color: "text-purple-500", onClick: () => onTabOpen('stats') },
   ];
 
   return (
