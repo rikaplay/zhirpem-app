@@ -5,7 +5,11 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { Search as SearchIcon, X, Clock } from 'lucide-react';
 
-export const SearchScreen = () => {
+interface SearchScreenProps {
+  onUserClick: (uid: string) => void;
+}
+
+export const SearchScreen: React.FC<SearchScreenProps> = ({ onUserClick }) => {
   const [searchTerm, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('Посты');
   const [results, setResults] = useState<any[]>([]);
@@ -62,7 +66,7 @@ export const SearchScreen = () => {
                 </div>
                 <div className="space-y-4">
                     {history.map(item => (
-                        <div key={item} className="flex items-center gap-4 text-zinc-500 font-medium cursor-pointer py-1">
+                        <div key={item} className="flex items-center gap-4 text-zinc-500 font-medium cursor-pointer py-1" onClick={() => handleSearch(item)}>
                             <Clock size={18} className="text-zinc-400" />
                             <span>{item}</span>
                         </div>
@@ -74,6 +78,33 @@ export const SearchScreen = () => {
         {searchTerm.length > 0 && results.length === 0 && (
             <div className="text-center py-40 font-bold text-zinc-400">Ничего не найдено</div>
         )}
+
+        <div className="space-y-3">
+          {results.map((user) => (
+            <div
+              key={user.id}
+              className="flex items-center gap-4 p-4 glass rounded-[28px] hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shadow-sm border-white/10"
+              onClick={() => onUserClick(user.username || user.id)}
+            >
+              <div className="w-14 h-14 rounded-full bg-primary/10 overflow-hidden border-2 border-white dark:border-zinc-800 flex-shrink-0">
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} className="w-full h-full object-cover" alt="" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-primary font-black text-xl">
+                    {user.name?.charAt(0).toUpperCase() || '?'}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-[17px] text-zinc-900 dark:text-zinc-100">{user.name}</h3>
+                <p className="text-zinc-500 font-bold text-sm">@{user.username}</p>
+              </div>
+              <button className="bg-primary text-white dark:text-zinc-900 px-5 py-2 rounded-full font-black text-xs uppercase tracking-wider shadow-md shadow-primary/20">
+                Профиль
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

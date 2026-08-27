@@ -11,6 +11,7 @@ import { SearchScreen } from "@/components/Tabs/SearchScreen";
 import { NotificationsScreen } from "@/components/Tabs/NotificationsScreen";
 import { MessagesScreen } from "@/components/Tabs/MessagesScreen";
 import { UserProfileScreen } from "@/components/Profile/UserProfileScreen";
+import { ChatDetailScreen } from "@/components/Tabs/ChatDetailScreen";
 import { Plus, Bell, Menu } from "lucide-react";
 
 export default function Home() {
@@ -20,6 +21,7 @@ export default function Home() {
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [profileUsername, setProfileUsername] = useState<string | null>(null);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeBottomTab, setActiveBottomTab] = useState('home');
 
   useEffect(() => {
@@ -42,6 +44,8 @@ export default function Home() {
 
       {profileUsername && <UserProfileScreen username={profileUsername} myUser={userObj} onBack={() => setProfileUsername(null)} />}
 
+      {activeChatId && <ChatDetailScreen chatId={activeChatId} myUsername={session.username} onBack={() => setActiveChatId(null)} />}
+
       <header className="sticky top-0 z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-xl px-4 py-4 flex items-center justify-between border-b border-zinc-500/5">
         <button onClick={() => setIsSidebarOpen(true)} className="w-11 h-11 glass rounded-2xl flex items-center justify-center overflow-hidden">
           {session.avatarUrl ? <img src={session.avatarUrl} className="w-full h-full object-cover" /> : <Menu size={22} className="text-primary" />}
@@ -57,9 +61,9 @@ export default function Home() {
 
       <div className="max-w-[500px] mx-auto">
         {activeBottomTab === 'home' && <MainFeed myUsername={session.username} myUser={userObj} onUserClick={setProfileUsername} />}
-        {activeBottomTab === 'search' && <SearchScreen />}
+        {activeBottomTab === 'search' && <SearchScreen onUserClick={setProfileUsername} />}
         {activeBottomTab === 'notifications' && <NotificationsScreen myUsername={session.username} />}
-        {activeBottomTab === 'messages' && <MessagesScreen myUsername={session.username} />}
+        {activeBottomTab === 'messages' && <MessagesScreen myUsername={session.username} onChatClick={setActiveChatId} />}
       </div>
 
       {activeBottomTab === 'home' && (
