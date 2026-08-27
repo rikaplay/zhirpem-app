@@ -6,6 +6,7 @@ import { AuthScreen } from "@/components/Auth/AuthScreen";
 import { Sidebar } from "@/components/Navigation/Sidebar";
 import { BottomNav } from "@/components/Navigation/BottomNav";
 import { ComposePost } from "@/components/Feed/ComposePost";
+import { SettingsScreen } from "@/components/Settings/SettingsScreen";
 import { Plus, Bell, Menu } from "lucide-react";
 
 export default function Home() {
@@ -13,6 +14,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState('home');
 
   useEffect(() => {
@@ -60,6 +62,10 @@ export default function Home() {
         onClose={() => setIsSidebarOpen(false)}
         user={userObj}
         onLogout={handleLogout}
+        onSettingsOpen={() => {
+            setIsSettingsOpen(true);
+            setIsSidebarOpen(false);
+        }}
       />
 
       {/* COMPOSE DIALOG */}
@@ -70,6 +76,14 @@ export default function Home() {
             onSuccess={() => {
                 // Можно добавить уведомление об успехе
             }}
+        />
+      )}
+
+      {/* SETTINGS SCREEN */}
+      {isSettingsOpen && (
+        <SettingsScreen
+            user={userObj}
+            onClose={() => setIsSettingsOpen(false)}
         />
       )}
 

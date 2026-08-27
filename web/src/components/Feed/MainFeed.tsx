@@ -61,15 +61,9 @@ export const MainFeed: React.FC<MainFeedProps> = ({ myUsername }) => {
   }, [isLoading, isLastPage, lastVisible]);
 
   return (
-    <div className="max-w-[500px] mx-auto w-full min-h-screen pb-32 bg-background-light dark:bg-background-dark">
-      {/* Header / Logo */}
-      <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
-        <div className="text-2xl font-black text-primary">Жирпем</div>
-        <div className="w-10 h-10 rounded-xl glass flex items-center justify-center text-xl cursor-pointer">👤</div>
-      </div>
-
+    <div className="max-w-[500px] mx-auto w-full min-h-screen pb-32">
       {/* Tabs */}
-      <div className="sticky top-[64px] z-10 px-4 py-2">
+      <div className="sticky top-[72px] z-10 px-4 py-2">
         <div className="glass p-1.5 rounded-[24px] flex gap-1 shadow-lg border-white/10">
             {tabs.map((tab) => (
             <button

@@ -14,9 +14,12 @@ import {
 } from 'lucide-react';
 import { FeedRepository } from '@/repositories/FeedRepository';
 
+import { Comments } from './Comments';
+
 interface PostItemProps {
   post: Post;
   myUsername: string;
+  myUser: any;
   onUserClick: (username: string) => void;
   onHashtagClick: (hashtag: string) => void;
 }
@@ -24,6 +27,7 @@ interface PostItemProps {
 export const PostItem: React.FC<PostItemProps> = ({
   post,
   myUsername,
+  myUser,
   onUserClick,
   onHashtagClick
 }) => {
@@ -36,6 +40,7 @@ export const PostItem: React.FC<PostItemProps> = ({
   const [isBookmarked, setIsBookmarked] = useState(bookmarkedBy.includes(myUsername));
   const [isReposted, setIsReposted] = useState(repostedBy.includes(myUsername));
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showComments, setShowComments] = useState(false);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -143,7 +148,10 @@ export const PostItem: React.FC<PostItemProps> = ({
 
       {/* FOOTER: Actions */}
       <div className="flex items-center gap-5 mt-5 px-1">
-        <button className={`flex items-center gap-1.5 py-1.5 px-3 rounded-full glass transition-all active:scale-90 ${post.commentsCount > 0 ? 'text-primary' : 'text-zinc-500'}`}>
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowComments(!showComments); }}
+          className={`flex items-center gap-1.5 py-1.5 px-3 rounded-full glass transition-all active:scale-90 ${post.commentsCount > 0 ? 'text-primary' : 'text-zinc-500'}`}
+        >
           <MessageCircle size={16} />
           <span className="text-xs font-black uppercase tracking-wider">{post.commentsCount > 0 ? post.commentsCount : 'Ответ'}</span>
         </button>
@@ -156,6 +164,8 @@ export const PostItem: React.FC<PostItemProps> = ({
           <span className="text-xs font-black uppercase tracking-wider">{localLikes}</span>
         </button>
       </div>
+
+      {showComments && <Comments postId={post.id} myUser={myUser} />}
 
       <div className="h-[1px] bg-zinc-50 dark:bg-zinc-800/50 mt-4 mb-3 w-full" />
 

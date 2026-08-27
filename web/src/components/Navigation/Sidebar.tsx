@@ -17,17 +17,18 @@ interface SidebarProps {
   onClose: () => void;
   user: User;
   onLogout: () => void;
+  onSettingsOpen: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, user, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, user, onLogout, onSettingsOpen }) => {
   if (!isOpen) return null;
 
   const menuItems = [
-    { icon: <UserIcon size={22} />, label: "Мой Профиль", color: "text-blue-500" },
-    { icon: <Settings size={22} />, label: "Настройки", color: "text-zinc-500" },
-    { icon: <Bookmark size={22} />, label: "Закладки", color: "text-primary" },
-    { icon: <Users size={22} />, label: "Сообщества", color: "text-orange-500" },
-    { icon: <BarChart3 size={22} />, label: "Статистика", color: "text-purple-500" },
+    { icon: <UserIcon size={22} />, label: "Мой Профиль", color: "text-blue-500", onClick: () => {} },
+    { icon: <Settings size={22} />, label: "Настройки", color: "text-zinc-500", onClick: onSettingsOpen },
+    { icon: <Bookmark size={22} />, label: "Закладки", color: "text-primary", onClick: () => {} },
+    { icon: <Users size={22} />, label: "Сообщества", color: "text-orange-500", onClick: () => {} },
+    { icon: <BarChart3 size={22} />, label: "Статистика", color: "text-purple-500", onClick: () => {} },
   ];
 
   return (
@@ -63,6 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, user, onLogou
           {menuItems.map((item, idx) => (
             <div
               key={idx}
+              onClick={item.onClick}
               className="flex items-center gap-4 p-4 rounded-2xl hover:bg-white/10 active:scale-95 transition-all cursor-pointer group"
             >
               <span className={`${item.color} group-hover:scale-110 transition-transform`}>{item.icon}</span>
