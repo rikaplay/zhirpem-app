@@ -8,9 +8,10 @@ import { DocumentSnapshot } from 'firebase/firestore';
 
 interface MainFeedProps {
   myUsername: string;
+  myUser: any;
 }
 
-export const MainFeed: React.FC<MainFeedProps> = ({ myUsername }) => {
+export const MainFeed: React.FC<MainFeedProps> = ({ myUsername, myUser }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [lastVisible, setLastVisible] = useState<DocumentSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -88,6 +89,7 @@ export const MainFeed: React.FC<MainFeedProps> = ({ myUsername }) => {
             key={post.id}
             post={post}
             myUsername={myUsername}
+            myUser={myUser}
             onUserClick={(uid) => console.log('Click user:', uid)}
             onHashtagClick={(tag) => console.log('Click hashtag:', tag)}
           />

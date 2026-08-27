@@ -113,7 +113,7 @@ export default function Home() {
 
       {/* CONTENT */}
       <div className="max-w-[500px] mx-auto min-h-screen">
-        {activeBottomTab === 'home' && <MainFeed myUsername={session.username} />}
+        {activeBottomTab === 'home' && <MainFeed myUsername={session.username} myUser={userObj} />}
 
         {activeBottomTab !== 'home' && (
           <div className="flex flex-col items-center justify-center py-40 opacity-30">
