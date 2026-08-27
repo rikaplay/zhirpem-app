@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
     ArrowLeft, User, AtSign, Shield, Eye,
     Users, CheckCircle2, Lock, Palette, Smartphone, Droplets,
@@ -9,6 +9,14 @@ import {
 } from 'lucide-react';
 
 export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
+  const [theme, setTheme] = useState('Светлая');
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'Светлая' ? 'Темная' : 'Светлая';
+    setTheme(newTheme);
+    document.documentElement.classList.toggle('dark');
+  };
+
   const Section = ({ title, children }: any) => (
     <div className="mb-6">
       <h2 className="text-primary font-black text-sm uppercase tracking-tight mb-3 ml-4">{title}</h2>
@@ -18,8 +26,11 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
     </div>
   );
 
-  const Item = ({ icon: Icon, label, value, color, hasArrow = true, isSwitch = false, checked = false }: any) => (
-    <div className="p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer group">
+  const Item = ({ icon: Icon, label, value, color, hasArrow = true, isSwitch = false, checked = false, onClick }: any) => (
+    <div
+        className="p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer group"
+        onClick={onClick}
+    >
       <div className="flex items-center gap-4">
         <div className={`w-9 h-9 rounded-[14px] ${color} flex items-center justify-center text-white`}>
             <Icon size={20} strokeWidth={2.5} />
@@ -62,7 +73,7 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
         </Section>
 
         <Section title="Внешний вид">
-            <Item icon={Palette} label="Тема оформления" value="Светлая" color="bg-purple-500" />
+            <Item icon={Palette} label="Тема оформления" value={theme} color="bg-purple-500" onClick={toggleTheme} />
             <Item icon={Smartphone} label="Иконка приложения" color="bg-green-600" />
             <Item icon={Droplets} label="Своя палитра" color="bg-orange-500" isSwitch />
             <Item icon={Droplets} label="Эффект стекла" color="bg-cyan-600" isSwitch checked />

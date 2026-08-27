@@ -33,11 +33,18 @@ export default function Home() {
   if (loading) return <div className="flex h-screen w-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div></div>;
   if (!session) return <AuthScreen onSuccess={setSession} />;
 
-  const userObj = { id: session.username, name: session.name, avatarUrl: session.avatarUrl };
+  const userObj = { id: session.username, username: session.username, name: session.name, avatarUrl: session.avatarUrl };
 
   return (
     <main className="min-h-screen bg-background-light dark:bg-background-dark text-zinc-900 dark:text-zinc-100 pb-32">
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} user={userObj as any} onLogout={() => {localStorage.removeItem('user_session'); setSession(null);}} onSettingsOpen={() => {setIsSettingsOpen(true); setIsSidebarOpen(false);}} />
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        user={userObj as any}
+        onLogout={() => {localStorage.removeItem('user_session'); setSession(null);}}
+        onSettingsOpen={() => {setIsSettingsOpen(true); setIsSidebarOpen(false);}}
+        onProfileOpen={(uid) => {setProfileUsername(uid); setIsSidebarOpen(false);}}
+      />
 
       {isComposeOpen && <ComposePost user={userObj} onClose={() => setIsComposeOpen(false)} onSuccess={() => {}} />}
       {isSettingsOpen && <SettingsScreen user={userObj} onClose={() => setIsSettingsOpen(false)} onLogout={() => {localStorage.removeItem('user_session'); setSession(null);}} />}
