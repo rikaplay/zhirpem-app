@@ -31,7 +31,10 @@ export const MainFeed: React.FC<MainFeedProps> = ({ myUsername }) => {
       if (isRefresh) {
         setPosts(result.posts);
       } else {
-        setPosts(prev => [...prev, ...result.posts].filter((v, i, a) => a.findIndex(t => t.id === v.id) === i));
+        setPosts(prev => {
+            const combined = [...prev, ...result.posts];
+            return combined.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+        });
       }
 
       setLastVisible(result.lastVisible);
@@ -47,10 +50,9 @@ export const MainFeed: React.FC<MainFeedProps> = ({ myUsername }) => {
     loadPosts(true);
   }, [activeTab, myUsername]);
 
-  // Infinite scroll logic
   useEffect(() => {
     const handleScroll = () => {
-      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 && !isLoading && !isLastPage) {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 800 && !isLoading && !isLastPage) {
         loadPosts();
       }
     };
@@ -59,26 +61,34 @@ export const MainFeed: React.FC<MainFeedProps> = ({ myUsername }) => {
   }, [isLoading, isLastPage, lastVisible]);
 
   return (
-    <div className="max-w-[600px] mx-auto w-full min-h-screen pb-24">
-      {/* Tabs */}
-      <div className="sticky top-0 z-10 glass p-2 rounded-[24px] mb-4 mx-3 mt-3 flex gap-1">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 py-2.5 rounded-[20px] text-xs font-bold transition-all ${
-              activeTab === tab
-                ? 'bg-primary text-white dark:text-zinc-900'
-                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
+    <div className="max-w-[500px] mx-auto w-full min-h-screen pb-32 bg-background-light dark:bg-background-dark">
+      {/* Header / Logo */}
+      <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
+        <div className="text-2xl font-black text-primary">Жирпем</div>
+        <div className="w-10 h-10 rounded-xl glass flex items-center justify-center text-xl cursor-pointer">👤</div>
       </div>
 
-      {/* Feed */}
-      <div className="px-3">
+      {/* Tabs */}
+      <div className="sticky top-[64px] z-10 px-4 py-2">
+        <div className="glass p-1.5 rounded-[24px] flex gap-1 shadow-lg border-white/10">
+            {tabs.map((tab) => (
+            <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-2.5 rounded-[18px] text-[13px] font-bold transition-all btn-bounce ${
+                activeTab === tab
+                    ? 'bg-primary text-white dark:text-zinc-900 shadow-md scale-[1.02]'
+                    : 'text-zinc-500 hover:bg-white/10'
+                }`}
+            >
+                {tab}
+            </button>
+            ))}
+        </div>
+      </div>
+
+      {/* Feed List */}
+      <div className="px-4 mt-4 space-y-4">
         {posts.map((post) => (
           <PostItem
             key={post.id}
@@ -91,14 +101,14 @@ export const MainFeed: React.FC<MainFeedProps> = ({ myUsername }) => {
 
         {isLoading && (
           <div className="flex justify-center p-8">
-            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
           </div>
         )}
 
         {!isLoading && posts.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
-            <span className="text-4xl mb-4">📭</span>
-            <p>Здесь пока пусто.</p>
+          <div className="flex flex-col items-center justify-center py-24 text-zinc-500">
+            <span className="text-5xl mb-4">📭</span>
+            <p className="font-bold">Здесь пока пусто</p>
           </div>
         )}
       </div>
