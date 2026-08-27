@@ -2,19 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { MainFeed } from "@/components/Feed/MainFeed";
-import { auth } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { AuthScreen } from "@/components/Auth/AuthScreen";
 
 export default function Home() {
-  const [user, setUser] = useState<any>(null);
+  const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    // Проверяем сохраненную сессию при загрузке
+    const savedSession = localStorage.getItem('user_session');
+    if (savedSession) {
+      setSession(JSON.parse(savedSession));
+    }
+    setLoading(false);
   }, []);
 
   if (loading) {
@@ -25,30 +25,20 @@ export default function Home() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="flex h-screen w-full flex-col items-center justify-center p-4 bg-background-light dark:bg-background-dark">
-        <h1 className="text-3xl font-bold mb-6">Жирпем Web</h1>
-        <button
-          onClick={() => {/* Redirect to auth or show login component */}}
-          className="bg-primary text-white dark:text-zinc-900 px-8 py-3 rounded-2xl font-bold active:scale-95 transition-all"
-        >
-          Войти в аккаунт
-        </button>
-      </div>
-    );
+  if (!session) {
+    return <AuthScreen onSuccess={(data) => setSession(data)} />;
   }
 
   return (
     <main className="min-h-screen bg-background-light dark:bg-background-dark">
-      <MainFeed myUsername={user.displayName || user.uid} />
+      <MainFeed myUsername={session.username} />
 
-      {/* Bottom Nav Mock */}
-      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[90%] max-w-[400px] glass h-16 rounded-full flex items-center justify-around px-6 z-50">
-        <button className="text-2xl text-primary">🏠</button>
-        <button className="text-2xl text-zinc-400">🔍</button>
-        <button className="text-2xl text-zinc-400">🔔</button>
-        <button className="text-2xl text-zinc-400">✉️</button>
+      {/* Bottom Nav */}
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-[400px] glass h-16 rounded-full flex items-center justify-around px-6 z-50 shadow-xl border-white/20">
+        <button className="text-2xl hover:scale-110 transition-transform">🏠</button>
+        <button className="text-2xl grayscale hover:grayscale-0 transition-all opacity-50">🔍</button>
+        <button className="text-2xl grayscale hover:grayscale-0 transition-all opacity-50">🔔</button>
+        <button className="text-2xl grayscale hover:grayscale-0 transition-all opacity-50">✉️</button>
       </nav>
     </main>
   );
