@@ -22,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" className="light">
-      <body className={`${inter.className} antialiased transition-colors duration-300`}>
+      <body className={`${inter.className} antialiased bg-background-light dark:bg-background-dark transition-colors duration-300`}>
         {children}
       </body>
     </html>

@@ -5,12 +5,14 @@ import { MainFeed } from "@/components/Feed/MainFeed";
 import { AuthScreen } from "@/components/Auth/AuthScreen";
 import { Sidebar } from "@/components/Navigation/Sidebar";
 import { BottomNav } from "@/components/Navigation/BottomNav";
+import { ComposePost } from "@/components/Feed/ComposePost";
 import { Plus, Bell, Menu } from "lucide-react";
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState('home');
 
   useEffect(() => {
@@ -39,33 +41,46 @@ export default function Home() {
     return <AuthScreen onSuccess={(data) => setSession(data)} />;
   }
 
+  const userObj = {
+    id: session.username,
+    username: session.username,
+    name: session.name,
+    avatarUrl: session.avatarUrl,
+    uid: session.username,
+    status: 'online',
+    currentScreen: 'Main'
+  };
+
   return (
     <main className="min-h-screen bg-background-light dark:bg-background-dark text-zinc-900 dark:text-zinc-100">
 
-      {/* SIDEBAR (DRAWER) */}
+      {/* SIDEBAR */}
       <Sidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        user={{
-            id: session.username,
-            username: session.username,
-            name: session.name,
-            avatarUrl: session.avatarUrl,
-            uid: session.username,
-            status: 'online',
-            currentScreen: 'Main'
-        }}
+        user={userObj}
         onLogout={handleLogout}
       />
+
+      {/* COMPOSE DIALOG */}
+      {isComposeOpen && (
+        <ComposePost
+            user={userObj}
+            onClose={() => setIsComposeOpen(false)}
+            onSuccess={() => {
+                // Можно добавить уведомление об успехе
+            }}
+        />
+      )}
 
       {/* TOP BAR */}
       <header className="sticky top-0 z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-xl px-4 py-4 flex items-center justify-between border-b border-zinc-500/5">
         <button
           onClick={() => setIsSidebarOpen(true)}
-          className="w-11 h-11 glass rounded-2xl flex items-center justify-center active:scale-90 transition-transform"
+          className="w-11 h-11 glass rounded-2xl flex items-center justify-center active:scale-90 transition-transform overflow-hidden"
         >
           {session.avatarUrl ? (
-            <img src={session.avatarUrl} className="w-full h-full rounded-2xl object-cover" alt="Me" />
+            <img src={session.avatarUrl} className="w-full h-full object-cover" alt="Me" />
           ) : (
             <Menu size={22} className="text-primary" />
           )}
@@ -82,8 +97,8 @@ export default function Home() {
         </button>
       </header>
 
-      {/* MAIN CONTENT (FEED) */}
-      <div className="max-w-[500px] mx-auto">
+      {/* CONTENT */}
+      <div className="max-w-[500px] mx-auto min-h-screen">
         {activeBottomTab === 'home' && <MainFeed myUsername={session.username} />}
 
         {activeBottomTab !== 'home' && (
@@ -94,12 +109,15 @@ export default function Home() {
         )}
       </div>
 
-      {/* FAB (Floating Action Button) */}
-      <button className="fixed right-6 bottom-28 w-16 h-16 bg-primary text-white dark:text-zinc-900 rounded-[24px] shadow-2xl flex items-center justify-center active:scale-90 transition-all hover:rotate-12 z-40 border-t border-white/20">
+      {/* FAB */}
+      <button
+        onClick={() => setIsComposeOpen(true)}
+        className="fixed right-6 bottom-28 w-16 h-16 bg-primary text-white dark:text-zinc-900 rounded-[24px] shadow-2xl flex items-center justify-center active:scale-90 transition-all hover:rotate-12 z-40 border-t border-white/20"
+      >
         <Plus size={32} strokeWidth={3} />
       </button>
 
-      {/* BOTTOM NAVIGATION */}
+      {/* BOTTOM NAV */}
       <BottomNav activeTab={activeBottomTab} onTabChange={setActiveBottomTab} />
 
     </main>

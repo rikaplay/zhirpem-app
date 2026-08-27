@@ -76,11 +76,12 @@ export const PostItem: React.FC<PostItemProps> = ({
       {/* HEADER: Avatar + Name + Badges */}
       <div className="flex gap-3 items-center mb-3">
         <div
-          className="w-[46px] h-[46px] rounded-full overflow-hidden bg-primary/10 flex-shrink-0 cursor-pointer border-2 border-white dark:border-zinc-800 shadow-sm"
+          className="rounded-full overflow-hidden bg-primary/10 flex-shrink-0 cursor-pointer border-2 border-white dark:border-zinc-800 shadow-sm"
+          style={{ width: '46px', height: '46px', minWidth: '46px', minHeight: '46px' }}
           onClick={(e) => { e.stopPropagation(); onUserClick(post.handle?.replace('@', '') || ''); }}
         >
           {post.authorAvatarUrl ? (
-            <img src={post.authorAvatarUrl} alt={post.author} className="w-full h-full object-cover" />
+            <img src={post.authorAvatarUrl} alt={post.author} className="w-full h-full object-cover" style={{ width: '100%', height: '100%' }} />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-primary font-black text-lg">
               {post.author?.charAt(0).toUpperCase() || '?'}
