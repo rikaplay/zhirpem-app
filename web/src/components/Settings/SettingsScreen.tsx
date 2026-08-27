@@ -2,10 +2,10 @@
 
 import React from 'react';
 import {
-    ArrowLeft, User, AtSign, Shield, Eye, Image as ImageIcon,
+    ArrowLeft, User, AtSign, Shield, Eye,
     Users, CheckCircle2, Lock, Palette, Smartphone, Droplets,
-    Gauge, Type, Rocket, Volume2, MessageSquare, BadgeCheck,
-    Music, Bell, Vibrating, Trash2, Zap, HelpCircle, Info, RefreshCw, Share2
+    Gauge, Rocket, Volume2, MessageSquare, BadgeCheck,
+    Music, Bell, Trash2, Zap, HelpCircle, Info, RefreshCw, Share2
 } from 'lucide-react';
 
 export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
@@ -34,7 +34,7 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
             <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${checked ? 'left-7' : 'left-1'}`} />
         </div>
       ) : hasArrow && (
-        <span className="text-zinc-300 group-hover:text-zinc-500 group-hover:translate-x-0.5 transition-all">❯</span>
+        <span className="text-zinc-300 group-hover:text-zinc-500 group-hover:translate-x-0.5 transition-all font-bold">❯</span>
       )}
     </div>
   );
@@ -42,7 +42,7 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
   return (
     <div className="fixed inset-0 z-[70] bg-background-light dark:bg-background-dark flex flex-col animate-in slide-in-from-bottom duration-500 pb-20 overflow-y-auto">
       <div className="p-6 flex items-center gap-6 sticky top-0 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-md z-10">
-        <button onClick={onClose} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><ArrowLeft size={24} /></button>
+        <button onClick={onClose} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-transform active:scale-90"><ArrowLeft size={24} /></button>
         <h1 className="text-2xl font-black tracking-tight">Настройки</h1>
       </div>
 
@@ -65,12 +65,19 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
             <Item icon={Palette} label="Тема оформления" value="Светлая" color="bg-purple-500" />
             <Item icon={Smartphone} label="Иконка приложения" color="bg-green-600" />
             <Item icon={Droplets} label="Своя палитра" color="bg-orange-500" isSwitch />
-            <Item icon={Gauge} label="Низкая производительность" color="bg-blue-700" isSwitch />
-            <div className="p-5">
-                <p className="font-bold text-[15px] mb-2 flex justify-between">Размер шрифта <span>150%</span></p>
-                <div className="w-full h-1.5 bg-primary/20 rounded-full relative">
-                    <div className="absolute top-0 bottom-0 left-0 w-[80%] bg-primary rounded-full" />
-                    <div className="absolute top-1/2 left-[80%] -translate-y-1/2 w-4 h-4 bg-white border-2 border-primary rounded-full shadow-md" />
+            <Item icon={Droplets} label="Эффект стекла" color="bg-cyan-600" isSwitch checked />
+            <div className="p-5 border-t border-zinc-500/5">
+                <div className="w-full h-1.5 bg-primary/20 rounded-full relative mb-6">
+                    <div className="absolute top-0 bottom-0 left-0 w-full bg-primary rounded-full" />
+                    <div className="absolute top-1/2 left-[100%] -translate-y-1/2 w-4 h-4 bg-white border-2 border-primary rounded-full shadow-md" />
+                </div>
+                <Item icon={Gauge} label="Низкая производительность" color="bg-blue-700" isSwitch />
+                <div className="p-2">
+                    <p className="font-bold text-[15px] flex justify-between">Размер шрифта <span className="text-primary">150%</span></p>
+                    <div className="w-full h-1.5 bg-primary/20 rounded-full relative mt-3">
+                        <div className="absolute top-0 bottom-0 left-0 w-full bg-primary rounded-full" />
+                        <div className="absolute top-1/2 left-[100%] -translate-y-1/2 w-4 h-4 bg-white border-2 border-primary rounded-full shadow-md" />
+                    </div>
                 </div>
             </div>
         </Section>
@@ -84,6 +91,36 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
             <Item icon={MessageSquare} label="Оформление чатов" color="bg-indigo-600" />
             <Item icon={BadgeCheck} label="Только проверенные" color="bg-green-500" isSwitch />
             <Item icon={Music} label="Мелодия вызова" value="Tune 2" color="bg-orange-500" />
+        </Section>
+
+        <Section title="Система">
+            <Item icon={Bell} label="Уведомления" value="Все" color="bg-red-500" />
+            <div className="px-12 py-2 space-y-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 rounded-full border-2 border-primary flex items-center justify-center">
+                        <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                    </div>
+                    <span className="font-bold text-sm">Все</span>
+                </div>
+                <div className="flex items-center gap-3 opacity-50">
+                    <div className="w-5 h-5 rounded-full border-2 border-zinc-400" />
+                    <span className="font-bold text-sm">Читаемые</span>
+                </div>
+                <div className="flex items-center gap-3 opacity-50">
+                    <div className="w-5 h-5 rounded-full border-2 border-zinc-400" />
+                    <span className="font-bold text-sm">Никто</span>
+                </div>
+            </div>
+            <Item icon={Smartphone} label="Вибрация" color="bg-green-500" isSwitch checked />
+            <Item icon={RefreshCw} label="Оптимизация" color="bg-blue-400" />
+            <Item icon={Zap} label="Энергосбережение" color="bg-green-400" />
+        </Section>
+
+        <Section title="Поддержка и О приложении">
+            <Item icon={HelpCircle} label="Написать в поддержку" color="bg-blue-600" />
+            <Item icon={Info} label="FAQ / База знаний" color="bg-purple-600" />
+            <Item icon={RefreshCw} label="Обновления" color="bg-blue-500" />
+            <Item icon={Share2} label="Пригласить друзей" color="bg-green-500" />
         </Section>
 
         <button
