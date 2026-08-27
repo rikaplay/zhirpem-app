@@ -3,7 +3,7 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "placeholder",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
@@ -11,18 +11,8 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-// Проверка на валидность API ключа (не должен содержать пробелов или быть пустым)
-const isValidConfig = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes(' ');
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-let app;
-if (typeof window !== "undefined") { // Инициализируем только в браузере
-    if (getApps().length === 0 && isValidConfig) {
-        app = initializeApp(firebaseConfig);
-    } else {
-        app = getApp();
-    }
-}
-
-export const db = app ? getFirestore(app) : null;
-export const auth = app ? getAuth(app) : null;
+export const db = getFirestore(app);
+export const auth = getAuth(app);
 export default app;

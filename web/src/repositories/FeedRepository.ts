@@ -10,11 +10,9 @@ import {
     getDoc,
     where,
     runTransaction,
-    FieldValue,
     updateDoc,
     arrayUnion,
     arrayRemove,
-    increment,
     DocumentSnapshot
 } from "firebase/firestore";
 import { Post } from "../types/chat";
@@ -56,7 +54,7 @@ export const FeedRepository = {
         const scores = data.scores || {};
         const topTags = Object.entries(scores)
             .sort(([, a]: any, [, b]: any) => b - a)
-            .take(10)
+            .slice(0, 10)
             .map(([tag]) => tag);
 
         if (topTags.length === 0) return this.fetchPosts(lastVisible);
@@ -77,7 +75,6 @@ export const FeedRepository = {
             ...doc.data()
         } as Post));
 
-        // Если по тегам мало постов, можно добавить fallback, но для простоты пока так
         return {
             posts,
             lastVisible: snapshot.docs[snapshot.docs.length - 1] || null,
@@ -126,15 +123,3 @@ export const FeedRepository = {
         }
     }
 };
-
-// Вспомогательный метод для TS, так как Array.prototype.take не стандартный
-declare global {
-    interface Array<T> {
-        take(n: number): Array<T>;
-    }
-}
-if (!Array.prototype.take) {
-    Array.prototype.take = function(n) {
-        return this.slice(0, n);
-    };
-}
