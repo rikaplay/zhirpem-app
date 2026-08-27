@@ -48,6 +48,7 @@ export default function Home() {
         onClose={() => setIsSidebarOpen(false)}
         user={{
             id: session.username,
+            username: session.username,
             name: session.name,
             avatarUrl: session.avatarUrl,
             uid: session.username,
