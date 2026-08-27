@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+    transpilePackages: ['firebase', '@firebase/auth', '@firebase/app', 'undici'],
     images: {
         remotePatterns: [
             {
@@ -12,3 +13,4 @@ const nextConfig = {
 };
 
 export default nextConfig;
+
