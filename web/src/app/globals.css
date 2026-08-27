@@ -8,12 +8,10 @@
   --primary: #006B44;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #121413;
-    --foreground: #E2E3E1;
-    --primary: #8DE3B5;
-  }
+.dark {
+  --background: #121413;
+  --foreground: #E2E3E1;
+  --primary: #8DE3B5;
 }
 
 body {
@@ -28,12 +26,16 @@ body {
     @apply backdrop-blur-2xl bg-white/70 dark:bg-zinc-900/60 border border-white/20 dark:border-white/10;
   }
 
+  /* Отключение стекла через класс, который вешаем на html в настройках */
+  .no-glass .glass {
+    @apply backdrop-blur-none bg-white dark:bg-zinc-900;
+  }
+
   .btn-bounce {
     @apply transition-transform active:scale-95 duration-100;
   }
 }
 
-/* Скроллбар как в Android */
 ::-webkit-scrollbar {
   width: 0px;
 }
