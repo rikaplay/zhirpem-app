@@ -64,13 +64,21 @@ export const UserProfileScreen: React.FC<UserProfileProps> = ({ username, myUser
         </div>
 
         <div className="px-5">
-            <div className="relative -mt-12 mb-3 inline-block">
-                <div className="w-[100px] h-[100px] rounded-full border-4 border-background-light dark:border-background-dark overflow-hidden bg-zinc-200">
+            <div className="relative -mt-16 mb-4 inline-block">
+                <div className="w-[110px] h-[110px] rounded-full border-[5px] border-background-light dark:border-background-dark overflow-hidden bg-zinc-200 shadow-sm">
                     <img src={user.avatarUrl || '/placeholder.png'} className="w-full h-full object-cover" />
                 </div>
-                <div className="absolute bottom-1 right-1 w-6 h-6 bg-green-500 border-4 border-background-light dark:border-background-dark rounded-full shadow-sm" />
+                <div className="absolute bottom-2 right-2 w-5 h-5 bg-green-500 border-[3px] border-background-light dark:border-background-dark rounded-full shadow-sm" />
+
+                {/* Community Badge like in Screenshot 5 */}
+                {user.joinedCommunityAvatar && (
+                    <div className="absolute -bottom-1 -left-1 w-8 h-8 rounded-full border-2 border-background-light dark:border-background-dark overflow-hidden bg-white shadow-md">
+                        <img src={user.joinedCommunityAvatar} className="w-full h-full object-cover" />
+                    </div>
+                )}
+
                 {username === myUser.id && (
-                    <button className="absolute -bottom-1 -right-4 p-2 bg-primary text-white rounded-full shadow-lg border-2 border-white dark:border-zinc-900">
+                    <button className="absolute top-1/2 -right-6 -translate-y-1/2 p-2 bg-primary text-white rounded-full shadow-lg border-2 border-white dark:border-zinc-900 btn-bounce">
                         <Edit2 size={14} strokeWidth={3} />
                     </button>
                 )}
@@ -78,18 +86,23 @@ export const UserProfileScreen: React.FC<UserProfileProps> = ({ username, myUser
 
             <div className="flex items-center gap-1.5 mb-0.5">
                 <h2 className="text-2xl font-black text-zinc-900 dark:text-white uppercase tracking-tighter">{user.name}</h2>
-                {user.blueBadge && <Verified size={20} className="text-blue-500 fill-blue-500" />}
-                {user.yellowBadge && <Star size={20} className="text-yellow-500 fill-yellow-500" />}
-            </div>
-            <p className="text-zinc-400 font-bold text-lg mb-2">@{user.username || user.id}</p>
-            <p className="text-primary font-bold text-sm mb-4">В сети</p>
-
-            {/* Bio */}
-            {user.bio && (
-                <div className="bg-zinc-100 dark:bg-zinc-800/50 p-4 rounded-[24px] mb-6 font-medium text-[15px]">
-                    {user.bio}
+                <div className="flex items-center gap-0.5">
+                    {user.blueBadge && <Verified size={18} className="text-blue-500 fill-blue-500" />}
+                    {user.yellowBadge && <Star size={18} className="text-yellow-500 fill-yellow-500" />}
                 </div>
+            </div>
+            <p className="text-zinc-400 font-bold text-[17px] mb-1">@{user.username || user.id}</p>
+            <p className="text-primary font-bold text-[13px] mb-5 uppercase tracking-widest">В сети</p>
+
+            {/* Custom Status like "Газан" in Screenshot 5 */}
+            {user.status && (
+                <p className="text-primary font-black text-lg mb-3">{user.status}</p>
             )}
+
+            {/* Bio in a rounded container */}
+            <div className="bg-[#E2DFE9]/30 dark:bg-zinc-800/40 p-5 rounded-[28px] mb-6 font-medium text-[15px] leading-relaxed">
+                {user.bio || "ну блин этот который создатель жирпема"}
+            </div>
 
             {/* Stats */}
             <div className="flex gap-1.5 mb-6">

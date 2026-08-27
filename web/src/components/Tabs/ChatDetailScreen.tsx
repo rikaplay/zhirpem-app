@@ -89,7 +89,12 @@ export const ChatDetailScreen: React.FC<ChatDetailScreenProps> = ({ chatId, myUs
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-[url('https://res.cloudinary.com/dcwp4nm3e/image/upload/v1/onboarding')] bg-fixed bg-center bg-cover bg-opacity-5">
+      <div
+        className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-fixed bg-center bg-cover"
+        style={{
+            backgroundImage: `linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)), url('https://res.cloudinary.com/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload/v1/onboarding')`
+        }}
+      >
         {messages.map((msg) => {
           const isMe = msg.senderId === myUsername;
           return (
