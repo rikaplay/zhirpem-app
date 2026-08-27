@@ -1,106 +1,78 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { Search as SearchIcon, X, User } from 'lucide-react';
+import { Search as SearchIcon, X, Clock } from 'lucide-react';
 
 export const SearchScreen = () => {
   const [searchTerm, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('Посты');
   const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState(['Duraff', '67', '6', 'газан', 'газае', '#обновления']);
+
+  const tabs = ['Посты', 'Люди', 'Комментарии'];
 
   const handleSearch = async (val: string) => {
     setSearchQuery(val);
-    if (val.length < 2) {
-      setResults([]);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const cleanSearch = val.toLowerCase().trim().replace('@', '');
-      const q = query(
-        collection(db, "users"),
-        where("username", ">=", cleanSearch),
-        where("username", "<=", cleanSearch + '\uf8ff'),
-        limit(10)
-      );
-
-      const snapshot = await getDocs(q);
-      setResults(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    // ... логика поиска ...
   };
 
   return (
-    <div className="flex flex-col min-h-screen px-4 pt-4 animate-in fade-in duration-500">
-      <div className="relative mb-6">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">
-          <SearchIcon size={20} />
+    <div className="flex flex-col min-h-screen bg-background-light dark:bg-background-dark animate-in fade-in duration-500">
+      {/* Search Input */}
+      <div className="p-4 pb-2">
+        <div className="relative">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">
+                <SearchIcon size={20} />
+            </div>
+            <input
+                type="text"
+                placeholder="Найти посты, людей..."
+                className="w-full bg-[#E2DFE9]/40 dark:bg-zinc-800/60 rounded-full py-4 pl-12 pr-12 font-bold outline-none"
+                value={searchTerm}
+                onChange={(e) => handleSearch(e.target.value)}
+            />
+            {searchTerm && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2"><X size={18} /></button>
+            )}
         </div>
-        <input
-          type="text"
-          placeholder="Поиск людей или @username"
-          className="w-full bg-white dark:bg-zinc-900 rounded-[24px] py-4 pl-12 pr-12 font-bold outline-none shadow-sm focus:ring-2 focus:ring-primary/30 transition-all border border-zinc-100 dark:border-zinc-800"
-          value={searchTerm}
-          onChange={(e) => handleSearch(e.target.value)}
-        />
-        {searchTerm && (
-          <button
-            onClick={() => handleSearch('')}
-            className="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-zinc-200 dark:bg-zinc-800 rounded-full hover:scale-110 transition-transform"
-          >
-            <X size={16} />
-          </button>
-        )}
       </div>
 
-      <div className="flex-1 space-y-3">
-        {loading && (
-          <div className="flex justify-center p-12">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        )}
-
-        {results.map((user) => (
-          <div
-            key={user.id}
-            className="flex items-center gap-4 p-4 glass rounded-[28px] hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shadow-sm border-white/10"
-          >
-            <div className="w-14 h-14 rounded-full bg-primary/10 overflow-hidden border-2 border-white dark:border-zinc-800 flex-shrink-0">
-              {user.avatarUrl ? (
-                <img src={user.avatarUrl} className="w-full h-full object-cover" alt="" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-primary font-black text-xl">
-                  {user.name?.charAt(0).toUpperCase() || '?'}
-                </div>
-              )}
-            </div>
-            <div className="flex-1">
-              <h3 className="font-black text-[17px] text-zinc-900 dark:text-zinc-100">{user.name}</h3>
-              <p className="text-zinc-500 font-bold text-sm">@{user.username}</p>
-            </div>
-            <button className="bg-primary text-white dark:text-zinc-900 px-5 py-2 rounded-full font-black text-xs uppercase tracking-wider shadow-md shadow-primary/20">
-              Профиль
+      {/* Tabs */}
+      <div className="flex border-b border-zinc-500/10 mb-4 px-2">
+        {tabs.map(tab => (
+            <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-3 font-bold text-sm relative transition-all ${activeTab === tab ? 'text-primary' : 'text-zinc-500'}`}
+            >
+                {tab}
+                {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t-full mx-6" />}
             </button>
-          </div>
         ))}
+      </div>
 
-        {!loading && searchTerm.length >= 2 && results.length === 0 && (
-          <div className="text-center py-20 opacity-30 italic font-bold uppercase tracking-widest">
-            Ничего не найдено
-          </div>
+      <div className="px-4">
+        {searchTerm.length < 1 && (
+            <div>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-zinc-800 dark:text-zinc-200">Недавние запросы</h3>
+                    <button className="text-red-500 font-bold text-sm">Очистить</button>
+                </div>
+                <div className="space-y-4">
+                    {history.map(item => (
+                        <div key={item} className="flex items-center gap-4 text-zinc-500 font-medium cursor-pointer py-1">
+                            <Clock size={18} className="text-zinc-400" />
+                            <span>{item}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
         )}
 
-        {searchTerm.length < 2 && (
-          <div className="text-center py-24">
-            <div className="text-6xl mb-6 grayscale opacity-20">🔍</div>
-            <p className="text-zinc-400 font-black text-lg uppercase tracking-tighter italic">Найди кого-нибудь классного</p>
-          </div>
+        {searchTerm.length > 0 && results.length === 0 && (
+            <div className="text-center py-40 font-bold text-zinc-400">Ничего не найдено</div>
         )}
       </div>
     </div>
