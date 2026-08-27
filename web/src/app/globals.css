@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 26, 29, 28;
+  --background-start-rgb: 247, 251, 248;
+  --background-end-rgb: 247, 251, 248;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 226, 227, 225;
+    --background-start-rgb: 18, 20, 19;
+    --background-end-rgb: 18, 20, 19;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-start-rgb));
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glass {
+    @apply backdrop-blur-xl bg-white/70 dark:bg-black/40 border border-white/20 dark:border-white/10;
+  }
+
+  .text-primary {
+    @apply text-[#006B44] dark:text-[#8DE3B5];
+  }
+
+  .bg-primary {
+    @apply bg-[#006B44] dark:bg-[#8DE3B5];
+  }
+}
