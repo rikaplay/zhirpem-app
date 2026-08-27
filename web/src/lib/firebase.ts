@@ -1,4 +1,4 @@
-import { initializeApp, getApps } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
@@ -11,8 +11,18 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+// Проверка на валидность API ключа (не должен содержать пробелов или быть пустым)
+const isValidConfig = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes(' ');
 
-export const db = getFirestore(app);
-export const auth = getAuth(app);
+let app;
+if (typeof window !== "undefined") { // Инициализируем только в браузере
+    if (getApps().length === 0 && isValidConfig) {
+        app = initializeApp(firebaseConfig);
+    } else {
+        app = getApp();
+    }
+}
+
+export const db = app ? getFirestore(app) : null;
+export const auth = app ? getAuth(app) : null;
 export default app;
