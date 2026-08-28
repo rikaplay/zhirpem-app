@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot, collection, query, where, orderBy, limit, getDocs, startAfter, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, orderBy, limit, getDocs, startAfter, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { ArrowLeft, MoreVertical, Edit2, Verified, Star, Loader2, Image as ImageIcon, Palette } from 'lucide-react';
 import { PostItem } from '../Feed/PostItem';
 
