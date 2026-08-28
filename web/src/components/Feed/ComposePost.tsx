@@ -4,6 +4,7 @@ import React, { useState, useRef } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { X, Image as ImageIcon, Video, Send, Loader2 } from 'lucide-react';
+import { hapticFeedback } from '@/lib/utils';
 
 export const ComposePost: React.FC<any> = ({ user, onClose, onSuccess }) => {
   const [text, setText] = useState('');
@@ -46,17 +47,36 @@ export const ComposePost: React.FC<any> = ({ user, onClose, onSuccess }) => {
 
       const date = new Date();
       await addDoc(collection(db, "zhirpem_posts"), {
-        author: user.name, handle: `@${user.id}`, text: text.trim(),
+        author: user.name,
+        handle: `@${user.id}`,
+        text: text.trim(),
         date: date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
         time: date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-        likes: 0, views: 0, likedBy: [], bookmarkedBy: [], repostedBy: [],
-        commentsCount: 0, isMedia: !!mediaUrl, mediaUrl, mediaType,
-        authorAvatarUrl: user.avatarUrl || null, timestamp: serverTimestamp(),
+        likes: 0,
+        views: 0,
+        likedBy: [],
+        bookmarkedBy: [],
+        repostedBy: [],
+        commentsCount: 0,
+        isMedia: !!mediaUrl,
+        mediaUrl,
+        mediaType,
+        authorAvatarUrl: user.avatarUrl || null,
+        authorNameColor: user.nameColor || null,
+        blueBadge: user.blueBadge || false,
+        yellowBadge: user.yellowBadge || false,
+        authorStatus: user.status || "",
+        timestamp: serverTimestamp(),
         tags: text.match(/#[a-zA-Zа-яА-Я0-9_]+/g) || []
       });
-      onSuccess(); onClose();
-    } catch (e) { alert("Ошибка публикации"); }
-    finally { setLoading(false); }
+
+      hapticFeedback(50);
+      onSuccess();
+      onClose();
+    } catch (e) {
+        console.error(e);
+        alert("Ошибка публикации");
+    } finally { setLoading(false); }
   };
 
   return (

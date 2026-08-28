@@ -19,6 +19,7 @@ import { FeedRepository } from '@/repositories/FeedRepository';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { Comments } from './Comments';
+import { hapticFeedback } from '@/lib/utils';
 
 interface PostItemProps {
   post: Post;
@@ -57,13 +58,29 @@ export const PostItem: React.FC<PostItemProps> = ({
     const newIsLiked = !isLiked;
     setIsLiked(newIsLiked);
     setLocalLikes(prev => newIsLiked ? prev + 1 : Math.max(0, prev - 1));
+    hapticFeedback(10);
     try { await FeedRepository.toggleLike(post.id, myUsername, isLiked); } catch (error) {
       setIsLiked(isLiked); setLocalLikes(localLikes);
     }
   };
 
+  const handleBookmark = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsBookmarked(!isBookmarked);
+    hapticFeedback(10);
+    await FeedRepository.toggleBookmark(post.id, myUsername, isBookmarked);
+  };
+
+  const handleRepost = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsReposted(!isReposted);
+    hapticFeedback(10);
+    await FeedRepository.toggleRepost(post.id, myUsername, isReposted);
+  };
+
   const handleDelete = async () => {
     if (window.confirm("Удалить этот пост?")) {
+        hapticFeedback(20);
         await deleteDoc(doc(db, "zhirpem_posts", post.id));
     }
   };
@@ -71,12 +88,14 @@ export const PostItem: React.FC<PostItemProps> = ({
   const handleUpdate = async () => {
     await updateDoc(doc(db, "zhirpem_posts", post.id), { text: editText });
     setIsEditing(false);
+    hapticFeedback(15);
   };
 
   const handleReport = async () => {
     await updateDoc(doc(db, "zhirpem_posts", post.id), { status: "на рассмотрении" });
     alert("Жалоба отправлена модераторам");
     setShowMenu(false);
+    hapticFeedback(10);
   };
 
   const renderMedia = () => {
@@ -106,7 +125,11 @@ export const PostItem: React.FC<PostItemProps> = ({
       )}
 
       <div className="flex gap-3 items-center mb-3">
-        <div className="w-[46px] h-[46px] rounded-full overflow-hidden bg-primary/10 flex-shrink-0 cursor-pointer border-2 border-white dark:border-zinc-800" onClick={(e) => { e.stopPropagation(); onUserClick(post.handle?.replace('@', '') || ''); }}>
+        <div
+            className="rounded-full overflow-hidden bg-primary/10 flex-shrink-0 cursor-pointer border-2 border-white dark:border-zinc-800 shadow-sm"
+            style={{ width: '46px', height: '46px', minWidth: '46px', minHeight: '46px' }}
+            onClick={(e) => { e.stopPropagation(); onUserClick(post.handle?.replace('@', '') || ''); }}
+        >
           {post.authorAvatarUrl ? <img src={post.authorAvatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-primary font-black text-lg">{post.author?.charAt(0)}</div>}
         </div>
 
@@ -115,11 +138,11 @@ export const PostItem: React.FC<PostItemProps> = ({
             <div className="flex flex-col" onClick={(e) => { e.stopPropagation(); onUserClick(post.handle?.replace('@', '') || ''); }}>
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-bold text-[15px] truncate text-zinc-900 dark:text-zinc-100" style={{ color: post.authorNameColor || '' }}>{post.author}</span>
-                {post.blueBadge && <Verified size={15} className="text-blue-500 fill-blue-500" />}
+                {post.blueBadge && <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center p-0.5"><Verified size={12} className="text-white" /></div>}
                 <span className="text-zinc-400 text-xs font-medium">{post.handle}</span>
               </div>
             </div>
-            <button onClick={(e) => {e.stopPropagation(); setShowMenu(!showMenu);}} className="p-2 text-zinc-300 hover:text-zinc-500 rounded-full"><MoreVertical size={20} /></button>
+            <button onClick={(e) => {e.stopPropagation(); setShowMenu(!showMenu);}} className="p-2 text-zinc-300 hover:text-zinc-500 rounded-full transition-colors"><MoreVertical size={20} /></button>
           </div>
           <div className="text-zinc-400 text-[10px] font-bold uppercase mt-0.5">{post.date} {post.time && `в ${post.time}`}</div>
         </div>
@@ -143,11 +166,29 @@ export const PostItem: React.FC<PostItemProps> = ({
       </div>
 
       <div className="flex items-center gap-5 mt-5 px-1">
-        <button onClick={(e) => { e.stopPropagation(); setShowComments(!showComments); }} className={`flex items-center gap-1.5 py-1.5 px-3 rounded-full glass transition-all ${post.commentsCount > 0 ? 'text-primary' : 'text-zinc-500'}`}><MessageCircle size={16} /><span className="text-xs font-black uppercase">{post.commentsCount || 'Ответ'}</span></button>
-        <button className={`flex items-center gap-1.5 py-1.5 px-3 rounded-full glass transition-all ${isLiked ? 'text-pink-500' : 'text-zinc-500'}`} onClick={handleLike}><Heart size={16} className={isLiked ? 'fill-pink-500' : ''} /><span className="text-xs font-black uppercase">{localLikes}</span></button>
+        <button onClick={(e) => { e.stopPropagation(); setShowComments(!showComments); }} className={`flex items-center gap-1.5 py-1.5 px-3 rounded-full glass transition-all ${post.commentsCount > 0 ? 'text-primary' : 'text-zinc-500'}`}><MessageCircle size={16} /><span className="text-xs font-black uppercase tracking-wider">{post.commentsCount > 0 ? post.commentsCount : 'Ответ'}</span></button>
+        <button className={`flex items-center gap-1.5 py-1.5 px-3 rounded-full glass transition-all ${isLiked ? 'text-pink-500 border-pink-500/20' : 'text-zinc-500'}`} onClick={handleLike}><Heart size={16} className={isLiked ? 'fill-pink-500' : ''} /><span className="text-xs font-black uppercase tracking-wider">{localLikes}</span></button>
       </div>
 
       {showComments && <Comments postId={post.id} myUser={myUser} />}
+
+      <div className="h-[1px] bg-zinc-50 dark:bg-zinc-800/50 mt-4 mb-3 w-full" />
+
+      <div className="flex items-center justify-between px-1">
+        <button className={`flex items-center gap-1.5 p-1 transition-all active:scale-90 ${isBookmarked ? 'text-primary' : 'text-zinc-400'}`} onClick={handleBookmark}>
+          <Bookmark size={18} className={isBookmarked ? 'fill-primary' : ''} />
+          <span className="text-[11px] font-bold uppercase tracking-widest">Закладки</span>
+        </button>
+        <div className="flex items-center gap-4">
+          <button className={`flex items-center gap-1.5 p-1 transition-all active:scale-90 ${isReposted ? 'text-green-500' : 'text-zinc-400'}`} onClick={handleRepost}>
+            <Repeat size={18} />
+            <span className="text-[11px] font-bold uppercase tracking-widest">Репост</span>
+          </button>
+          <button className="p-1.5 text-zinc-400 hover:text-zinc-600 transition-colors">
+            <Share2 size={18} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

@@ -9,6 +9,8 @@ import {
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
+import { setCookie, getCookie, hapticFeedback } from '@/lib/utils';
+
 export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
   const [theme, setTheme] = useState('Светлая');
   const [isGlassEnabled, setIsGlassEnabled] = useState(true);
@@ -22,24 +24,34 @@ export const SettingsScreen = ({ onClose, user, onLogout }: any) => {
   const [newUsername, setNewUsername] = useState(user.id);
 
   useEffect(() => {
-    const savedGlass = localStorage.getItem('glass_enabled') !== 'false';
+    // Load from cookies
+    const savedGlass = getCookie('glass_enabled') !== 'false';
     setIsGlassEnabled(savedGlass);
-    if (document.documentElement.classList.contains('dark')) setTheme('Темная');
+
+    const savedTheme = getCookie('app_theme');
+    if (savedTheme === 'dark' || document.documentElement.classList.contains('dark')) {
+        setTheme('Темная');
+        document.documentElement.classList.add('dark');
+    }
+
     setIsReadReceipts(user.readReceipts !== false);
     setIsHideFollows(user.hideFollows || false);
   }, [user]);
 
   const toggleTheme = () => {
-    const newTheme = theme === 'Светлая' ? 'Темная' : 'Светлая';
+    const isDark = document.documentElement.classList.toggle('dark');
+    const newTheme = isDark ? 'Темная' : 'Светлая';
     setTheme(newTheme);
-    document.documentElement.classList.toggle('dark');
+    setCookie('app_theme', isDark ? 'dark' : 'light');
+    hapticFeedback(15);
   };
 
   const toggleGlass = () => {
     const newVal = !isGlassEnabled;
     setIsGlassEnabled(newVal);
-    localStorage.setItem('glass_enabled', String(newVal));
+    setCookie('glass_enabled', String(newVal));
     document.documentElement.classList.toggle('no-glass', !newVal);
+    hapticFeedback(15);
   };
 
   const updateFirebaseSetting = async (field: string, value: any, setter?: Function) => {

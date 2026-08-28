@@ -19,6 +19,7 @@ import { UpdatesScreen } from "@/components/Tabs/UpdatesScreen";
 import { Plus, Sparkles, Menu } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
+import { getCookie } from "@/lib/utils";
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
@@ -42,7 +43,33 @@ export default function Home() {
             if (snap.exists()) setUserData({ id: snap.id, ...snap.data() });
         });
     }
+
+    // Apply saved theme/glass settings from cookies
+    const glass = getCookie('glass_enabled') !== 'false';
+    document.documentElement.classList.toggle('no-glass', !glass);
+
+    const theme = getCookie('app_theme');
+    if (theme === 'dark') document.documentElement.classList.add('dark');
+
     setLoading(false);
+  }, []);
+
+  // Swipe Gesture Listener
+  useEffect(() => {
+    let touchStartX = 0;
+    const handleTouchStart = (e: TouchEvent) => { touchStartX = e.touches[0].clientX; };
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touchEndX = e.changedTouches[0].clientX;
+      if (touchEndX - touchStartX > 100 && touchStartX < 50) { // Swipe from left edge
+        setIsSidebarOpen(true);
+      }
+    };
+    window.addEventListener('touchstart', handleTouchStart);
+    window.addEventListener('touchend', handleTouchEnd);
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
   }, []);
 
   // Poll for new events every 5s
