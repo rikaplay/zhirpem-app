@@ -16,10 +16,13 @@ import { BookmarksScreen } from "@/components/Tabs/BookmarksScreen";
 import { CommunitiesScreen } from "@/components/Tabs/CommunitiesScreen";
 import { StatsScreen } from "@/components/Tabs/StatsScreen";
 import { UpdatesScreen } from "@/components/Tabs/UpdatesScreen";
-import { Plus, Bell, Menu, Sparkles } from "lucide-react";
+import { Plus, Sparkles, Menu } from "lucide-react";
+import { db } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -30,62 +33,57 @@ export default function Home() {
   const [activeBottomTab, setActiveBottomTab] = useState('home');
 
   useEffect(() => {
-    const savedSession = localStorage.getItem('user_session');
-    if (savedSession) { setSession(JSON.parse(savedSession)); }
-
-    // Apply saved theme/glass settings
-    const glass = localStorage.getItem('glass_enabled') !== 'false';
-    document.documentElement.classList.toggle('no-glass', !glass);
-
+    const saved = localStorage.getItem('user_session');
+    if (saved) {
+        const s = JSON.parse(saved);
+        setSession(s);
+        // Live update user data
+        onSnapshot(doc(db, "users", s.username), (snap) => {
+            if (snap.exists()) setUserData({ id: snap.id, ...snap.data() });
+        });
+    }
     setLoading(false);
   }, []);
 
-  if (loading) return (
-    <div className="flex h-screen w-full items-center justify-center bg-background-light dark:bg-background-dark">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-    </div>
-  );
+  // Poll for new events every 5s
+  useEffect(() => {
+    if (!session) return;
+    const interval = setInterval(() => {
+        // Logic to check for new notifications or posts could go here
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [session]);
 
+  if (loading) return <div className="flex h-screen w-full items-center justify-center"><div className="h-10 w-10 animate-spin border-4 border-primary border-t-transparent rounded-full" /></div>;
   if (!session) return <AuthScreen onSuccess={setSession} />;
 
-  const userObj = { id: session.username, username: session.username, name: session.name, avatarUrl: session.avatarUrl };
-
-  const handleTabChange = (tab: string) => {
-    setActiveBottomTab(tab);
-    setProfileUsername(null);
-  };
-
   return (
-    <main className="min-h-screen bg-background-light dark:bg-background-dark text-zinc-900 dark:text-zinc-100 pb-32 transition-colors duration-300">
+    <main className="min-h-screen bg-background-light dark:bg-background-dark text-zinc-900 dark:text-zinc-100 pb-32 overflow-hidden">
 
-      {/* SIDEBAR */}
+      {/* Sidebar with Gesture Placeholder */}
+      <div
+        className="fixed inset-y-0 left-0 w-4 z-50"
+        onMouseEnter={() => setIsSidebarOpen(true)} // Simple gesture placeholder
+      />
+
       <Sidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        user={userObj as any}
-        onLogout={() => {localStorage.removeItem('user_session'); setSession(null);}}
-        onSettingsOpen={() => {setIsSettingsOpen(true); setIsSidebarOpen(false);}}
-        onProfileOpen={(uid) => {setProfileUsername(uid); setActiveBottomTab('profile'); setIsSidebarOpen(false);}}
-        onTabOpen={(tab) => {setActiveBottomTab(tab); setIsSidebarOpen(false);}}
+        user={userData || session}
+        onLogout={() => {localStorage.removeItem('user_session'); window.location.reload();}}
+        onSettingsOpen={() => setIsSettingsOpen(true)}
+        onProfileOpen={(uid) => {setProfileUsername(uid); setActiveBottomTab('profile');}}
+        onTabOpen={setActiveBottomTab}
       />
 
-      {/* OVERLAYS */}
-      {isComposeOpen && <ComposePost user={userObj} onClose={() => setIsComposeOpen(false)} onSuccess={() => {}} />}
-      {isSettingsOpen && <SettingsScreen user={userObj} onClose={() => setIsSettingsOpen(false)} onLogout={() => {localStorage.removeItem('user_session'); setSession(null);}} />}
-      {isUpdatesOpen && <UpdatesScreen onBack={() => setIsUpdatesOpen(false)} />}
+      {isComposeOpen && <ComposePost user={userData || session} onClose={() => setIsComposeOpen(false)} onSuccess={() => { if(window.navigator.vibrate) window.navigator.vibrate(50); }} />}
+      {isSettingsOpen && <SettingsScreen user={userData || session} onClose={() => setIsSettingsOpen(false)} onLogout={() => {localStorage.removeItem('user_session'); window.location.reload();}} />}
+      {isUpdatesOpen && <UpdatesScreen onBack={() => setIsUpdatesOpen(false)} myUser={userData || session} />}
       {activeChatId && <ChatDetailScreen chatId={activeChatId} myUsername={session.username} onBack={() => setActiveChatId(null)} />}
 
-      {/* TOP BAR */}
       <header className="sticky top-0 z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-xl px-4 py-4 flex items-center justify-between border-b border-zinc-500/5">
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          className="w-11 h-11 glass rounded-2xl flex items-center justify-center overflow-hidden active:scale-90 transition-all border-white/20 shadow-sm"
-        >
-          {session.avatarUrl ? (
-            <img src={session.avatarUrl} className="w-full h-full object-cover" alt="Profile" />
-          ) : (
-            <Menu size={22} className="text-primary" />
-          )}
+        <button onClick={() => setIsSidebarOpen(true)} className="w-11 h-11 glass rounded-2xl flex items-center justify-center overflow-hidden">
+          {(userData?.avatarUrl || session.avatarUrl) ? <img src={userData?.avatarUrl || session.avatarUrl} className="w-full h-full object-cover" /> : <Menu size={22} className="text-primary" />}
         </button>
 
         <div className="flex flex-col items-center">
@@ -93,59 +91,27 @@ export default function Home() {
             <div className="h-0.5 w-8 bg-primary/20 rounded-full" />
         </div>
 
-        <div className="flex gap-2">
-            <button
-                onClick={() => setIsUpdatesOpen(true)}
-                className="w-11 h-11 glass rounded-2xl flex items-center justify-center active:scale-90 transition-all relative border-white/20"
-            >
-                <Sparkles size={20} className="text-primary animate-pulse" />
-            </button>
-            <button
-                onClick={() => setActiveBottomTab('notifications')}
-                className="w-11 h-11 glass rounded-2xl flex items-center justify-center relative active:scale-90 transition-all border-white/20"
-            >
-                <Bell size={22} className={activeBottomTab === 'notifications' ? 'text-primary' : 'text-zinc-400'} />
-                <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-zinc-900" />
-            </button>
-        </div>
+        <button onClick={() => setIsUpdatesOpen(true)} className="w-11 h-11 glass rounded-2xl flex items-center justify-center relative active:scale-90 transition-all border-white/20">
+          <Sparkles size={22} className="text-primary" />
+        </button>
       </header>
 
-      {/* CONTENT AREA */}
-      <div className="max-w-[500px] mx-auto">
-        {activeBottomTab === 'home' && <MainFeed myUsername={session.username} myUser={userObj} onUserClick={setProfileUsername} />}
+      <div className="max-w-[500px] mx-auto min-h-screen">
+        {activeBottomTab === 'home' && <MainFeed myUsername={session.username} myUser={userData || session} onUserClick={setProfileUsername} />}
         {activeBottomTab === 'search' && <SearchScreen onUserClick={setProfileUsername} />}
         {activeBottomTab === 'notifications' && <NotificationsScreen myUsername={session.username} />}
         {activeBottomTab === 'messages' && <MessagesScreen myUsername={session.username} onChatClick={setActiveChatId} />}
-
-        {/* Profile Views */}
-        {(activeBottomTab === 'profile' || profileUsername) && (
-            <UserProfileScreen
-                username={profileUsername || session.username}
-                myUser={userObj}
-                onBack={() => {setProfileUsername(null); if(activeBottomTab === 'profile') setActiveBottomTab('home');}}
-            />
-        )}
-
-        {activeBottomTab === 'bookmarks' && <BookmarksScreen myUser={userObj} onUserClick={setProfileUsername} />}
+        {(activeBottomTab === 'profile' || profileUsername) && <UserProfileScreen username={profileUsername || session.username} myUser={userData || session} onBack={() => {setProfileUsername(null); setActiveBottomTab('home');}} />}
+        {activeBottomTab === 'bookmarks' && <BookmarksScreen myUser={userData || session} onUserClick={setProfileUsername} />}
         {activeBottomTab === 'communities' && <CommunitiesScreen />}
         {activeBottomTab === 'stats' && <StatsScreen />}
       </div>
 
-      {/* FAB */}
       {activeBottomTab === 'home' && !isSidebarOpen && (
-        <button
-          onClick={() => setIsComposeOpen(true)}
-          className="fixed right-6 bottom-28 w-16 h-16 bg-primary text-white rounded-[24px] shadow-2xl flex items-center justify-center active:scale-90 transition-all hover:rotate-12 z-40 border border-white/20"
-        >
-          <Plus size={32} strokeWidth={3} />
-        </button>
+        <button onClick={() => setIsComposeOpen(true)} className="fixed right-6 bottom-28 w-16 h-16 bg-primary text-white rounded-[24px] shadow-2xl flex items-center justify-center active:scale-90 transition-all hover:rotate-12 z-40 border border-white/20"><Plus size={32} strokeWidth={3} /></button>
       )}
 
-      {/* BOTTOM NAV */}
-      {!isSidebarOpen && !activeChatId && !isSettingsOpen && !isUpdatesOpen && (
-        <BottomNav activeTab={activeBottomTab} onTabChange={handleTabChange} />
-      )}
-
+      {!isSidebarOpen && !activeChatId && !isSettingsOpen && !isUpdatesOpen && <BottomNav activeTab={activeBottomTab} onTabChange={setActiveBottomTab} />}
     </main>
   );
 }
