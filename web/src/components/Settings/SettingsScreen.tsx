@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
     ArrowLeft, User, AtSign, Eye,
     Users, CheckCircle2, Lock, Palette, Droplets,
-    Rocket, Volume2, Bell, Trash2, Zap, HelpCircle, Info, RefreshCw, Share2
+    Rocket, Volume2, Bell, Trash2, Zap, HelpCircle, Info, RefreshCw, Share2, Smartphone
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
