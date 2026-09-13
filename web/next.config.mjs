@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    output: 'export', // Включаем статический экспорт для стабильности на Netlify
+    /* Мы убираем 'export', чтобы Vercel использовал свои нативные функции Next.js */
     images: {
-        unoptimized: true, // Нужно для режима export
         remotePatterns: [
             {
                 protocol: 'https',
